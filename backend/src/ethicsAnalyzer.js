@@ -603,10 +603,11 @@ const STOP_WORDS = new Set([
 
 export async function analyzeEthics(text, options = {}) {
   const reviewText = text || "";
+  const documentContext = buildDocumentContext(reviewText);
   const summary = await Promise.all(
     ETHICS.map(async ({ analyzer, ...ethic }) => {
       const result = reviewText.trim() ? await analyzer(reviewText, options) : [];
-      const normalizedResult = normalizeAnalyzerResult(result, ethic);
+      const normalizedResult = normalizeAnalyzerResult(result, ethic, documentContext);
 
       return {
         ethic,
@@ -631,9 +632,9 @@ export async function analyzeEthics(text, options = {}) {
   };
 }
 
-function normalizeAnalyzerResult(result, ethic) {
+function normalizeAnalyzerResult(result, ethic, documentContext) {
   const rawBreaches = Array.isArray(result) ? result : result?.breaches || [];
-  const breaches = rawBreaches.map((breach, index) => enrichBreach(breach, ethic, index));
+  const breaches = rawBreaches.map((breach, index) => enrichBreach(breach, ethic, index, documentContext));
 
   return {
     status: Array.isArray(result) || !result?.status ? (breaches.length > 0 ? "failed" : "passed") : result.status,
@@ -644,13 +645,19 @@ function normalizeAnalyzerResult(result, ethic) {
   };
 }
 
-function enrichBreach(breach, ethic, index) {
+function enrichBreach(breach, ethic, index, documentContext) {
   const category = breach.category || inferBreachCategory(ethic.id, breach);
   const severity = breach.severity || inferSeverity(ethic.id, category, breach);
   const confidence = breach.confidence || inferConfidence(ethic.id, category, breach);
+  const documentLocation = getBreachDocumentLocation(documentContext, breach.startIndex);
+  const enrichedBreach = {
+    ...breach,
+    pageNumber: breach.pageNumber || documentLocation.pageNumber,
+    headline: breach.headline || documentLocation.headline,
+  };
 
   return {
-    ...breach,
+    ...enrichedBreach,
     id: breach.id || `${ethic.id}-${index + 1}`,
     ethicId: ethic.id,
     ethicTitle: ethic.title,
@@ -658,7 +665,7 @@ function enrichBreach(breach, ethic, index) {
     severity,
     confidence,
     confidenceLabel: getConfidenceLabel(confidence),
-    evidence: breach.evidence || inferEvidence(ethic.id, category, breach),
+    evidence: breach.evidence || inferEvidence(ethic.id, category, enrichedBreach),
     recommendation: breach.recommendation || getReviewerRecommendation(ethic.id, category),
     reviewPriority: getReviewPriority(severity, confidence),
   };
@@ -838,6 +845,125 @@ function inferConfidence(ethicId, category, breach) {
   return baseConfidenceByCategory[category] || 0.72;
 }
 
+function buildDocumentContext(text) {
+  const lines = [];
+  const headlineCandidates = [];
+  const lineMatches = Array.from(text.matchAll(/[^\r\n]*(?:\r\n|\r|\n|$)/g)).filter((match) => match[0]);
+  let pageNumber = null;
+  let cursor = 0;
+
+  for (let index = 0; index < lineMatches.length; index++) {
+    const rawLine = lineMatches[index][0];
+    const lineText = rawLine.replace(/\r\n|\r|\n/g, "");
+    const trimmed = lineText.trim();
+    const pageMatch = trimmed.match(/^Page\s+(\d+)\b/i);
+    const startIndex = cursor;
+    const endIndex = cursor + rawLine.length;
+
+    if (pageMatch) {
+      pageNumber = Number.parseInt(pageMatch[1], 10);
+    }
+
+    const lineInfo = {
+      text: trimmed,
+      startIndex,
+      endIndex,
+      lineNumber: index + 1,
+      pageNumber,
+    };
+
+    lines.push(lineInfo);
+
+    if (isLikelyHeadline(trimmed)) {
+      headlineCandidates.push(lineInfo);
+    }
+
+    cursor = endIndex;
+  }
+
+  return {
+    lines,
+    headlineCandidates,
+  };
+}
+
+function getBreachDocumentLocation(documentContext, startIndex) {
+  if (!documentContext?.lines?.length || !Number.isFinite(startIndex)) {
+    return {};
+  }
+
+  const line = findLineAtIndex(documentContext.lines, startIndex);
+  const headline = findNearestHeadline(documentContext.headlineCandidates, line, startIndex);
+
+  return {
+    pageNumber: line?.pageNumber,
+    headline: headline?.text || "",
+  };
+}
+
+function findLineAtIndex(lines, startIndex) {
+  let matchedLine = lines[0];
+
+  for (const line of lines) {
+    if (line.startIndex > startIndex) {
+      break;
+    }
+
+    matchedLine = line;
+
+    if (startIndex < line.endIndex) {
+      break;
+    }
+  }
+
+  return matchedLine;
+}
+
+function findNearestHeadline(headlineCandidates, breachLine, startIndex) {
+  if (!breachLine) {
+    return null;
+  }
+
+  const samePageCandidates = headlineCandidates.filter(
+    (candidate) =>
+      candidate.startIndex <= startIndex &&
+      candidate.pageNumber === breachLine.pageNumber &&
+      candidate.lineNumber < breachLine.lineNumber,
+  );
+
+  const nearbyCandidate = samePageCandidates
+    .filter((candidate) => breachLine.lineNumber - candidate.lineNumber <= 35)
+    .at(-1);
+
+  return nearbyCandidate || samePageCandidates.at(-1) || null;
+}
+
+function isLikelyHeadline(line) {
+  if (!line || /^Page\s+\d+\b/i.test(line)) {
+    return false;
+  }
+
+  const normalizedLine = line.replace(/\s+/g, " ").trim();
+  const wordCount = countWords(normalizedLine);
+
+  if (normalizedLine.length < 8 || normalizedLine.length > 140 || wordCount < 2 || wordCount > 18) {
+    return false;
+  }
+
+  if (/[.!?:;]$/.test(normalizedLine)) {
+    return false;
+  }
+
+  if (/^(?:advertorial|advertisement|classifieds?|sports?|business|news|politics|features?|opinion)$/i.test(normalizedLine)) {
+    return false;
+  }
+
+  const titleCaseWords = normalizedLine.match(/\b[A-Z][a-zA-Z0-9'-]*\b/g) || [];
+  const hasHeadlineShape = titleCaseWords.length >= Math.min(2, wordCount) || normalizedLine === normalizedLine.toUpperCase();
+
+  return hasHeadlineShape && /[A-Za-z]{3}/.test(normalizedLine);
+}
+
 function inferEvidence(ethicId, category, breach) {
   const evidence = [
     {
@@ -846,9 +972,18 @@ function inferEvidence(ethicId, category, breach) {
     },
     {
       label: "Location",
-      value: `Line ${breach.lineNumber}`,
+      value: [breach.pageNumber ? `Page ${breach.pageNumber}` : "", `Line ${breach.lineNumber}`]
+        .filter(Boolean)
+        .join(", "),
     },
   ];
+
+  if (breach.headline) {
+    evidence.push({
+      label: "Headline",
+      value: breach.headline,
+    });
+  }
 
   if (breach.source?.url) {
     evidence.push({

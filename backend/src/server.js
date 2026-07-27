@@ -41,12 +41,16 @@ db.run(`
     stored_name TEXT NOT NULL,
     mime_type TEXT,
     size INTEGER NOT NULL,
+    file_created_at TEXT,
     uploaded_at TEXT NOT NULL,
     analysis_json TEXT
   );
 `);
 
 ensureColumn("uploads", "analysis_json", "TEXT");
+ensureColumn("uploads", "file_created_at", "TEXT");
+ensureColumn("uploads", "newspaper_name", "TEXT");
+ensureColumn("uploads", "newspaper_date", "TEXT");
 
 function saveDatabase() {
   fs.writeFileSync(dbPath, Buffer.from(db.export()));
@@ -109,9 +113,11 @@ app.post("/uploads", upload.single("file"), async (req, res) => {
   }
 
   try {
+    const fileStats = fs.statSync(req.file.path);
     const extraction = await extractTextFromUpload(req.file, { ocrCacheDir, ocrLangDir });
+    const newspaperMetadata = inferNewspaperMetadata(extraction.text);
     const analysis = await analyzeEthics(extraction.supported ? extraction.text : "", {
-      publicationName: req.body?.publicationName || path.parse(req.file.originalname).name,
+      publicationName: req.body?.publicationName || newspaperMetadata.name || path.parse(req.file.originalname).name,
     });
     const ethicsReview = {
       status: extraction.supported ? "completed" : "extraction_failed",
@@ -130,13 +136,27 @@ app.post("/uploads", upload.single("file"), async (req, res) => {
       storedName: req.file.filename,
       mimeType: req.file.mimetype,
       size: req.file.size,
+      fileCreatedAt: fileStats.birthtime?.toISOString?.() || fileStats.ctime.toISOString(),
+      newspaperName: newspaperMetadata.name,
+      newspaperDate: newspaperMetadata.date,
       uploadedAt: new Date().toISOString(),
       ethicsReview,
     };
 
     const insert = db.prepare(`
-      INSERT INTO uploads (id, original_name, stored_name, mime_type, size, uploaded_at, analysis_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO uploads (
+        id,
+        original_name,
+        stored_name,
+        mime_type,
+        size,
+        file_created_at,
+        newspaper_name,
+        newspaper_date,
+        uploaded_at,
+        analysis_json
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     insert.run([
@@ -145,6 +165,9 @@ app.post("/uploads", upload.single("file"), async (req, res) => {
       uploadRecord.storedName,
       uploadRecord.mimeType,
       uploadRecord.size,
+      uploadRecord.fileCreatedAt,
+      uploadRecord.newspaperName,
+      uploadRecord.newspaperDate,
       uploadRecord.uploadedAt,
       JSON.stringify(uploadRecord.ethicsReview),
     ]);
@@ -167,6 +190,9 @@ app.get("/uploads", (_req, res) => {
       stored_name AS storedName,
       mime_type AS mimeType,
       size,
+      file_created_at AS fileCreatedAt,
+      newspaper_name AS newspaperName,
+      newspaper_date AS newspaperDate,
       uploaded_at AS uploadedAt,
       analysis_json AS analysisJson
     FROM uploads
@@ -193,6 +219,150 @@ function resolveConfiguredPath(configuredPath, fallbackPath) {
 
 function firstExistingPath(paths) {
   return paths.find((candidatePath) => fs.existsSync(candidatePath));
+}
+
+function inferNewspaperMetadata(text = "") {
+  const firstPageText = getFirstPageText(text);
+
+  return {
+    name: inferNewspaperName(firstPageText),
+    date: inferNewspaperDate(firstPageText),
+  };
+}
+
+function getFirstPageText(text) {
+  const pageMatch = text.match(/(?:^|\n)Page\s+1\b([\s\S]*?)(?=\n\s*Page\s+2\b|$)/i);
+
+  if (pageMatch) {
+    return pageMatch[1].trim();
+  }
+
+  return text
+    .split(/\r\n|\r|\n/)
+    .slice(0, 120)
+    .join("\n")
+    .slice(0, 8000);
+}
+
+function inferNewspaperName(firstPageText) {
+  const compactText = firstPageText.replace(/\s+/g, " ").trim();
+  const mastheadText = firstPageText.replace(/\r\n|\r/g, "\n");
+  const knownNewspapers = [
+    {
+      name: "Daily Independent",
+      patterns: [/\bindependent\.ng\b/i, /\b(?:daily|sunday|saturday)\s+independent\b/i, /(?:^|\n)\s*INDEPENDENT\s*(?:\n|$)/],
+    },
+    { name: "Leadership", patterns: [/\bleadership\.ng\b/i, /\bleadership\b/i] },
+    { name: "The Sun", patterns: [/\bsunnewsonline\.com\b/i, /\bthe\s+sun\b/i] },
+    { name: "Vanguard", patterns: [/\bvanguardngr\.com\b/i, /\bvanguard\b/i] },
+    { name: "Punch", patterns: [/\bpunchng\.com\b/i, /\bthe\s+punch\b/i, /\bpunch\b/i] },
+    { name: "The Guardian", patterns: [/\bguardian\.ng\b/i, /\bthe\s+guardian\b/i] },
+    { name: "Daily Trust", patterns: [/\bdailytrust\.com\b/i, /\bdaily\s+trust\b/i] },
+    { name: "Nigerian Tribune", patterns: [/\btribuneonlineng\.com\b/i, /\bnigerian\s+tribune\b/i] },
+    { name: "ThisDay", patterns: [/\bthisdaylive\.com\b/i, /\bthisday\b/i] },
+    { name: "The Nation", patterns: [/\bthenationonlineng\.net\b/i, /\bthe\s+nation\b/i] },
+    { name: "New Telegraph", patterns: [/\bnewtelegraphng\.com\b/i, /\bnew\s+telegraph\b/i] },
+    { name: "Blueprint", patterns: [/\bblueprint\.ng\b/i, /\bblueprint\b/i] },
+    { name: "BusinessDay", patterns: [/\bbusinessday\.ng\b/i, /\bbusiness\s*day\b/i] },
+    { name: "Daily Post", patterns: [/\bdailypost\.ng\b/i, /\bdaily\s+post\b/i] },
+    { name: "Premium Times", patterns: [/\bpremiumtimesng\.com\b/i, /\bpremium\s+times\b/i] },
+    { name: "The Cable", patterns: [/\bthecable\.ng\b/i, /\bthe\s+cable\b/i] },
+  ];
+
+  const knownMatch = knownNewspapers.find((newspaper) =>
+    newspaper.patterns.some((pattern) => pattern.test(compactText) || pattern.test(mastheadText)),
+  );
+
+  if (knownMatch) {
+    return knownMatch.name;
+  }
+
+  return inferMastheadLine(firstPageText);
+}
+
+function inferMastheadLine(firstPageText) {
+  const ignoredLinePattern =
+    /(?:^Page\s+\d+\b|www\.|@|\/|vol\.|no\.|n\d+|\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\b|\b(?:newspaper|most read|political|business elite|continues on)\b)/i;
+
+  return (
+    firstPageText
+      .split(/\r\n|\r|\n/)
+      .map((line) => line.replace(/\s+/g, " ").trim())
+      .filter((line) => line.length >= 3 && line.length <= 50)
+      .find((line) => {
+        if (ignoredLinePattern.test(line)) {
+          return false;
+        }
+
+        const words = line.split(/\s+/).filter(Boolean);
+        return words.length <= 5 && (line === line.toUpperCase() || words.every((word) => /^[A-Z][A-Za-z'-]*$/.test(word)));
+      }) || ""
+  );
+}
+
+function inferNewspaperDate(firstPageText) {
+  const compactText = firstPageText.replace(/\s+/g, " ").trim();
+  const monthNameDate = compactText.match(
+    /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?[,]?\s+(\d{2,4})\b/i,
+  );
+
+  if (monthNameDate) {
+    return formatShortDate(monthNameDate[1], monthNameDate[2], monthNameDate[3]);
+  }
+
+  const dayMonthNameDate = compactText.match(
+    /\b(\d{1,2})(?:st|nd|rd|th)?\s+(January|February|March|April|May|June|July|August|September|October|November|December)[,]?\s+(\d{2,4})\b/i,
+  );
+
+  if (dayMonthNameDate) {
+    return formatShortDate(dayMonthNameDate[2], dayMonthNameDate[1], dayMonthNameDate[3]);
+  }
+
+  const numericDate = compactText.match(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b/);
+
+  if (numericDate) {
+    return formatShortDate(numericDate[1], numericDate[2], numericDate[3]);
+  }
+
+  return "";
+}
+
+function formatShortDate(monthValue, dayValue, yearValue) {
+  const month = normalizeMonth(monthValue);
+  const day = Number.parseInt(dayValue, 10);
+  const year = Number.parseInt(yearValue, 10);
+
+  if (!month || !day || !year) {
+    return "";
+  }
+
+  const shortYear = yearValue.length === 2 ? year : year % 100;
+
+  return `${String(month).padStart(2, "0")}/${String(day).padStart(2, "0")}/${String(shortYear).padStart(2, "0")}`;
+}
+
+function normalizeMonth(monthValue) {
+  const monthNames = {
+    january: 1,
+    february: 2,
+    march: 3,
+    april: 4,
+    may: 5,
+    june: 6,
+    july: 7,
+    august: 8,
+    september: 9,
+    october: 10,
+    november: 11,
+    december: 12,
+  };
+
+  if (/^\d+$/.test(monthValue)) {
+    const month = Number.parseInt(monthValue, 10);
+    return month >= 1 && month <= 12 ? month : 0;
+  }
+
+  return monthNames[monthValue.toLowerCase()] || 0;
 }
 
 function getReviewMessage(extraction, totalBreaches) {
