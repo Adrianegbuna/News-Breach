@@ -9,7 +9,8 @@
   },
   "scripts": {
     "dev": "nodemon src/server.js",
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "test:ethics": "node src/ethicsAnalyzer.test.mjs"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",

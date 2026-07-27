@@ -151,12 +151,22 @@ const ACCURACY_SAFE_REPORTED_CLAIM_PATTERNS = [
   /\b(?:condemns|warning|refrain|be\s+advised|continues\s+to\s+publish)\b[\s\S]{0,260}\b(?:unverified|misleading|false|defamatory|speculative)\b/i,
   /\b(?:unverified|misleading|false|defamatory|speculative)\b[\s\S]{0,260}\b(?:condemns|warning|refrain|be\s+advised|continues\s+to\s+publish)\b/i,
   /\b(?:rumours?|claims?|speculation|viral\s+reports?)\b[\s\S]{0,320}\b(?:dismissed|clarified|old\s+news|false\s+news|not\s+recent|remain\s+unverified|confirmed[\s\S]{0,80}old\s+video)\b/i,
+  /\b(?:unverified|misleading|false|fabricated|baseless)\b[\s\S]{0,360}\b(?:claims?|video|reports?|information)\b[\s\S]{0,360}\b(?:dismissed|debunked|clarified|warned|urged|stop\s+sharing|verify|official\s+channels?)\b/i,
+  /\b(?:claims?|video|reports?|information)\b[\s\S]{0,360}\b(?:unverified|misleading|false|fabricated|baseless)\b[\s\S]{0,360}\b(?:dismissed|debunked|clarified|warned|urged|stop\s+sharing|verify|official\s+channels?)\b/i,
+  /\b(?:labelled|labeled|described|dismissed)\b[\s\S]{0,160}\b(?:claims?|allegations?|reports?)\b[\s\S]{0,160}\b(?:baseless|fabricated|false|misleading|unverified)\b/i,
+  /\b(?:baseless|fabricated|false|misleading|unverified)\b[\s\S]{0,160}\b(?:claims?|allegations?|reports?)\b[\s\S]{0,160}\b(?:clarified|never\s+issued|not\s+true|no\s+such|stop\s+sharing|verify)\b/i,
+  /\bunverified\s+claims?\b[\s\S]{0,160}\b(?:shared|posted|circulated|made|alleged|claimed)\b/i,
+  /\bfacts?\W+(?:not\W+)?speculation\W+(?:guide|inform|drive|support)\b/i,
   /\b(?:adding\s+to\s+the\s+speculation|claims\s+remain\s+unverified|unverified\s+routine\s+diplomatic\s+letter|unverified\s+foreign\s+paper)\b/i,
 ];
 
 const ACCURACY_SAFE_CERTAINTY_PATTERNS = [
   /\bwill\s+almost\s+certainly\b/i,
   /\bobviously,\s+these\s+weapons\b/i,
+  /\bthere\s+is\s+no\s+question\s+about\s+the\s+fact\s+that\b/i,
+  /\bcertainly\s+out\s+of\s+the\s+question\b/i,
+  /\bcertainly\s+(?:feel|think|believe|expect|hope)\b/i,
+  /\bobviously\s+we\s+still\b/i,
   /\b(?:certainly|obviously|clearly)\b.{0,120}\b(?:opinion|forecast|projection|may|might|could|should)\b/i,
   /\bundoubtedly\s+historic\b/i,
   /\bwill\s+certainly\s+not\s+be\s+matched\b/i,
@@ -301,6 +311,10 @@ const DIRECT_GLORIFICATION_PATTERNS = [
 
 const VIOLENCE_HARM_REDUCTION_PATTERNS = [
   /\b(?:condemned|decried|mourned|victims?|survivors?|rescued|receiving\s+care|hospital|killed|injured|traumati[sz]ed|arrested|foiled|neutralised|neutralized|recovered|security\s+forces|police|troops|army|dss|nscdc)\b/i,
+];
+
+const CYBER_SECURITY_CONTEXT_PATTERNS = [
+  /\b(?:cyber(?:security|criminals?|attacks?)|digital\s+payments?|payment\s+platforms?|financial\s+system|online\s+banking|fraud\s+prevention|data\s+breach|phishing|malware|ransomware|platform|users?|accounts?|transactions?)\b/i,
 ];
 
 const UNDER_16_AGE_PATTERNS = [
@@ -1133,7 +1147,7 @@ function findAccuracyAndFairnessBreaches(text) {
   for (let index = 0; index < sentences.length; index++) {
     const sentenceInfo = sentences[index];
     const sentence = sentenceInfo.text;
-    const context = getSentenceContext(sentences, index, 1);
+    const context = getSentenceContext(sentences, index, 2);
     const reason = getAccuracyAndFairnessReason(sentence, context);
 
     if (!reason) {
@@ -1677,6 +1691,10 @@ function getViolenceReason(sentence, context) {
   const glorifyingMatch = hasMatch(sentence, GLORIFYING_LANGUAGE_PATTERNS);
   const harmReductionContext = hasMatch(context, VIOLENCE_HARM_REDUCTION_PATTERNS);
 
+  if (isCyberSecurityRiskContext(sentence, context)) {
+    return null;
+  }
+
   if (directMatch) {
     return "Potentially gives instructional, admiring, or role-model framing to violence, kidnapping, terrorism, armed robbery, or criminal conduct.";
   }
@@ -1694,6 +1712,12 @@ function getViolenceReason(sentence, context) {
   }
 
   return null;
+}
+
+function isCyberSecurityRiskContext(sentence, context) {
+  const reviewContext = `${sentence} ${context}`;
+
+  return /\battack\b/i.test(sentence) && hasMatch(reviewContext, CYBER_SECURITY_CONTEXT_PATTERNS);
 }
 
 function getPrivacyReason(sentence, context) {
