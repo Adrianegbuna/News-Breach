@@ -61,6 +61,81 @@ await assertNoBreaches(
 
 await assertNoBreaches(
   [
+    "Page 3",
+    "Nigeria South Africa Relations",
+    "The country does not need reckless confrontation.",
+    "It does not need inflammatory rhetoric.",
+    "It certainly does not need retaliation against innocent South Africans.",
+  ].join("\n"),
+  "accuracy-and-fairness",
+  "Prescriptive opinion using certainly should not be treated as an unsupported factual claim.",
+);
+
+await assertNoBreaches(
+  [
+    "Page 5",
+    "Tobacco Control Advocates Meet",
+    "\"It is necessary to ensure that advocates get updates about how the industry continues to spread misleading narratives,\" Oluwafemi added.",
+  ].join("\n"),
+  "accuracy-and-fairness",
+  "Attributed quoted criticism about misleading narratives should not be treated as the newspaper publishing misinformation.",
+);
+
+await assertNoBreaches(
+  [
+    "Page 17",
+    "Troops Recover Arms",
+    "The joint operation resulted in the seizure of exhibits including locally fabricated firearms loaded with five cartridges.",
+  ].join("\n"),
+  "accuracy-and-fairness",
+  "Fabricated firearms means locally made weapons, not fabricated information.",
+);
+
+await assertNoBreaches(
+  [
+    "Page 22",
+    "State Courts Investors",
+    "Dr. Emu warned that the state would not tolerate land speculation or land grabbing.",
+  ].join("\n"),
+  "accuracy-and-fairness",
+  "Land speculation should not be treated as speculative reporting.",
+);
+
+await assertNoBreaches(
+  [
+    "Page 1",
+    "Dangote Plans Charity Donation",
+    "Africa's richest man, Aliko Dangote, plans to donate one-third of his wealth to charity as part of his succession plan, his daughter, Halima Dangote, has revealed.",
+    "Halima, a trustee of the Aliko Dangote Foundation, disclosed the arrangement in an interview.",
+  ].join("\n"),
+  "privacy",
+  "Public family role details around a foundation and charity succession plan should not be treated as private-life intrusion.",
+);
+
+await assertNoBreaches(
+  [
+    "Page 20",
+    "Humanitarian Outreach",
+    "Franc Utoo has facilitated free anti-snake venom treatment for Internally Displaced Persons who suffer snakebites.",
+    "This humanitarian initiative protects public health and safety.",
+  ].join("\n"),
+  "privacy",
+  "Public-health humanitarian treatment for IDPs should not be treated as private medical disclosure.",
+);
+
+await assertNoBreaches(
+  [
+    "Page 21",
+    "Education Ministry Receives Committee",
+    "The minister met members of the National Committee for the Advancement of Occupational Therapy, Audiology, Speech and Language Therapy Education.",
+    "The committee briefed him on its achievements and implementation plan.",
+  ].join("\n"),
+  "privacy",
+  "Professional therapy education programme names should not be treated as private therapy disclosure.",
+);
+
+await assertNoBreaches(
+  [
     "Page 29",
     "Digital Payments Surge Raises Security Questions",
     "A successful attack on a major payment platform can affect thousands or millions of users.",
@@ -98,6 +173,24 @@ await assertHasBreaches(
     breach.headline,
     "Community Safety Watch\nInside The Evening Patrol",
     "Breach headline should be the exact header/sub-header block above the breached passage.",
+  );
+}
+
+{
+  const analysis = await analyzeEthics(
+    [
+      "Page 17",
+      "Woman In Police Net",
+      "The suspect allegedly attacked her boyfriend with a sharp knife and severed his manhood.",
+      "On getting there it was discovered that the suspect has severed the victim's manhood during the attack.",
+    ].join("\n"),
+    { publicationName: "Daily Asset" },
+  );
+
+  assert.equal(
+    getBreaches(analysis, "decency").length,
+    1,
+    "Repeated nearby descriptions of the same graphic injury should count as one decency issue.",
   );
 }
 

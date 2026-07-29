@@ -139,7 +139,9 @@ const ACCURACY_META_CRITIQUE_PATTERNS = [
 
 const ACCURACY_SAFE_REPORTED_CLAIM_PATTERNS = [
   /\b(?:deceptive\s+marketing\s+and\s+misleading\s+pricing|marketing\s+and\s+misleading\s+pricing)\b/i,
-  /\bmisleading\s+narrative\b/i,
+  /\bmisleading\s+narratives?\b/i,
+  /\blocally\s+fabricated\s+firearms?\b/i,
+  /\bland\s+speculation\b/i,
   /\bbaseless\s+and\s+without\s+iota\s+of\s+merit\b/i,
   /\bunverified\s+transfer\s+stories\b/i,
   /\bmisleading\s+our\s+supporters\b/i,
@@ -163,10 +165,13 @@ const ACCURACY_SAFE_REPORTED_CLAIM_PATTERNS = [
 const ACCURACY_SAFE_CERTAINTY_PATTERNS = [
   /\bwill\s+almost\s+certainly\b/i,
   /\bobviously,\s+these\s+weapons\b/i,
+  /\bcertainly\s+does\s+not\s+need\b/i,
   /\bthere\s+is\s+no\s+question\s+about\s+the\s+fact\s+that\b/i,
   /\bcertainly\s+out\s+of\s+the\s+question\b/i,
   /\bcertainly\s+(?:feel|think|believe|expect|hope)\b/i,
   /\bobviously\s+we\s+still\b/i,
+  /\bobviously\s+a\s+great\s+source\s+of\s+pride\b/i,
+  /\bundoubtedly\s+important\s+objectives?\b/i,
   /\b(?:certainly|obviously|clearly)\b.{0,120}\b(?:opinion|forecast|projection|may|might|could|should)\b/i,
   /\bundoubtedly\s+historic\b/i,
   /\bwill\s+certainly\s+not\s+be\s+matched\b/i,
@@ -494,6 +499,17 @@ const VOLUNTARY_PRIVATE_DISCLOSURE_PATTERNS = [
   /\b(?:I|we)\b.{0,180}\b(?:pregnan(?:t|cy)|therapy|medical\s+tests?|treatment|husband|wife|children|fortune|debt)\b/i,
   /\b(?:said|told|revealed|disclosed|confirmed|posted|wrote)\b.{0,120}\b(?:I|we)\b.{0,160}\b(?:pregnan(?:t|cy)|therapy|medical\s+tests?|treatment|husband|wife|children|fortune|debt)\b/i,
   /\b(?:on\s+a\s+TV\s+show|in\s+an\s+interview|on\s+social\s+media|in\s+a\s+statement|speaking\s+to\s+[A-Z][A-Za-z\s]+)\b/i,
+];
+const PRIVACY_SAFE_PUBLIC_ROLE_CONTEXT_PATTERNS = [
+  /\b(?:Aliko\s+Dangote|Dangote\s+Foundation|trustee|charity|succession\s+plan|Bloomberg)\b/i,
+  /\b(?:foundation|charity|philanthrop(?:y|ic)|trustee|donat(?:e|ion)|wealth|succession\s+plan)\b[\s\S]{0,260}\b(?:daughter|son|family)\b/i,
+  /\b(?:daughter|son|family)\b[\s\S]{0,260}\b(?:foundation|charity|philanthrop(?:y|ic)|trustee|donat(?:e|ion)|wealth|succession\s+plan)\b/i,
+];
+const PRIVACY_SAFE_PUBLIC_HEALTH_CONTEXT_PATTERNS = [
+  /\b(?:public\s+health|humanitarian|IDPs?|Internally\s+Displaced\s+Persons?|displaced\s+persons?|anti[-\s]snake\s+venom|snakebites?|outreach|free\s+treatment|medical\s+intervention)\b/i,
+];
+const PRIVACY_SAFE_PROFESSIONAL_EDUCATION_CONTEXT_PATTERNS = [
+  /\b(?:Occupational\s+Therapy|Audiology|Speech\s+and\s+Language\s+Therapy|Therapy\s+Education|National\s+Committee|Minister\s+of\s+Education|education(?:al)?\s+reforms?|implementation\s+plan|committee(?:'s)?\s+achievements)\b/i,
 ];
 const PRIVATE_TOPIC_HEADING_PATTERNS = [
   /\b(?:what.{0,3}s\s+wrong\s+with|is\s+it\s+really\s+wrong\s+to|why|how)\b.{0,120}\b(?:pregnan(?:t|cy)|marriage|wedding|therapy|fertility)\b/i,
@@ -1493,6 +1509,7 @@ function findDecencyBreaches(text) {
   const sentences = getSentences(text);
   const breaches = [];
   const seenRanges = new Set();
+  const seenIssueLines = new Map();
 
   for (let index = 0; index < sentences.length; index++) {
     const sentenceInfo = sentences[index];
@@ -1509,12 +1526,24 @@ function findDecencyBreaches(text) {
       continue;
     }
 
+    const lineNumber = getLineNumber(text, sentenceInfo.startIndex);
+    const issueKey = getDecencyIssueKey(sentence, reason, context);
+    const previousIssueLine = issueKey ? seenIssueLines.get(issueKey) : null;
+
+    if (previousIssueLine && lineNumber - previousIssueLine <= 80) {
+      continue;
+    }
+
     seenRanges.add(key);
+    if (issueKey) {
+      seenIssueLines.set(issueKey, lineNumber);
+    }
+
     breaches.push({
       id: `decency-${breaches.length + 1}`,
       excerpt: buildExcerpt(text, sentenceInfo.startIndex, sentence.length),
       triggerText: sentence,
-      lineNumber: getLineNumber(text, sentenceInfo.startIndex),
+      lineNumber,
       startIndex: sentenceInfo.startIndex,
       endIndex: sentenceInfo.startIndex + sentence.length,
       reason,
@@ -1821,7 +1850,18 @@ function isCyberSecurityRiskContext(sentence, context) {
 }
 
 function getPrivacyReason(sentence, context) {
-  if (hasMatch(context, PRIVACY_SAFE_PUBLIC_CONTACT_PATTERNS)) {
+  const reviewContext = `${sentence} ${context}`;
+
+  if (hasMatch(sentence, PRIVATE_HARD_IDENTIFIER_PATTERNS)) {
+    return "Potentially publishes a personal identifier or direct contact detail such as NIN, BVN, account number, phone number, email, passport number, or exact street address.";
+  }
+
+  if (
+    hasMatch(context, PRIVACY_SAFE_PUBLIC_CONTACT_PATTERNS) ||
+    isSafePublicRolePrivacyContext(reviewContext) ||
+    isSafePublicHealthPrivacyContext(reviewContext) ||
+    isSafeProfessionalEducationPrivacyContext(reviewContext)
+  ) {
     return null;
   }
 
@@ -1836,10 +1876,6 @@ function getPrivacyReason(sentence, context) {
   const hasPublicInterest = hasMatch(context, PUBLIC_INTEREST_PATTERNS);
   const hasDisclosureVerb = hasMatch(sentence, PRIVACY_DISCLOSURE_VERB_PATTERNS);
   const hasNamedSubject = hasNamedPerson(sentence);
-
-  if (hasMatch(sentence, PRIVATE_HARD_IDENTIFIER_PATTERNS)) {
-    return "Potentially publishes a personal identifier or direct contact detail such as NIN, BVN, account number, phone number, email, passport number, or exact street address.";
-  }
 
   if (hasMatch(sentence, CONTACT_DETAIL_PATTERNS)) {
     return hasMatch(context, PRIVATE_CONTACT_DISCLOSURE_CONTEXT_PATTERNS)
@@ -1913,6 +1949,18 @@ function isHypotheticalQuestion(sentence) {
 
 function isPseudonymousAdviceOrVoluntaryDisclosure(sentence, context) {
   return hasMatch(context, PSEUDONYMOUS_ADVICE_CONTEXT_PATTERNS) || hasMatch(context, VOLUNTARY_PRIVATE_DISCLOSURE_PATTERNS);
+}
+
+function isSafePublicRolePrivacyContext(context) {
+  return hasMatch(context, PRIVACY_SAFE_PUBLIC_ROLE_CONTEXT_PATTERNS);
+}
+
+function isSafePublicHealthPrivacyContext(context) {
+  return hasMatch(context, PRIVACY_SAFE_PUBLIC_HEALTH_CONTEXT_PATTERNS);
+}
+
+function isSafeProfessionalEducationPrivacyContext(context) {
+  return hasMatch(context, PRIVACY_SAFE_PROFESSIONAL_EDUCATION_CONTEXT_PATTERNS);
 }
 
 function isPublicBiographicalFamilyProfile(sentence, context) {
@@ -1989,6 +2037,28 @@ function getDecencyReason(sentence, context) {
   }
 
   return null;
+}
+
+function getDecencyIssueKey(sentence, reason, context = "") {
+  if (!/lurid|graphic|abhorrent|horrid/i.test(reason)) {
+    return "";
+  }
+
+  const normalizedSentence = normalizeForEthicsMatching(`${sentence} ${context}`);
+
+  if (/\b(?:severed|cut(?:ting)?\s+off)\b.{0,80}\bmanhood\b/i.test(normalizedSentence)) {
+    return "graphic-injury-manhood";
+  }
+
+  if (/\b(?:dismembered|mutilated|body\s+parts|corpse|chainsaws?)\b/i.test(normalizedSentence)) {
+    return "graphic-body-remains";
+  }
+
+  const matchedTerm = normalizedSentence.match(
+    /\b(?:blood-soaked|blood\s+soaked|mangled|charred|dismembered|severed|decapitated|beheaded|guts|intestines|brains|corpse|rotting|decomposing|mutilated|disfigured|slit\s+throat|severed\s+head|burnt\s+corpse|charred\s+remains|naked\s+corpse|body\s+parts|private\s+parts|lifeless\s+body|pool\s+of\s+blood)\b/i,
+  );
+
+  return matchedTerm ? `graphic-detail-${matchedTerm[0].toLowerCase().replace(/\s+/g, "-")}` : "";
 }
 
 function findKnownExternalCopyBreaches(text, breachPrefix) {
