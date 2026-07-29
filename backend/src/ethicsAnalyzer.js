@@ -667,6 +667,7 @@ function enrichBreach(breach, ethic, index, documentContext) {
   const enrichedBreach = {
     ...breach,
     pageNumber: breach.pageNumber || documentLocation.pageNumber,
+    lineNumber: breach.lineNumber || documentLocation.lineNumber,
     headline: breach.headline || documentLocation.headline,
   };
 
@@ -861,7 +862,6 @@ function inferConfidence(ethicId, category, breach) {
 
 function buildDocumentContext(text) {
   const lines = [];
-  const headlineCandidates = [];
   const lineMatches = Array.from(text.matchAll(/[^\r\n]*(?:\r\n|\r|\n|$)/g)).filter((match) => match[0]);
   let pageNumber = null;
   let cursor = 0;
@@ -888,16 +888,12 @@ function buildDocumentContext(text) {
 
     lines.push(lineInfo);
 
-    if (isLikelyHeadline(trimmed)) {
-      headlineCandidates.push(lineInfo);
-    }
-
     cursor = endIndex;
   }
 
   return {
     lines,
-    headlineCandidates,
+    headlineCandidates: buildHeadlineCandidates(lines),
   };
 }
 
@@ -911,6 +907,7 @@ function getBreachDocumentLocation(documentContext, startIndex) {
 
   return {
     pageNumber: line?.pageNumber,
+    lineNumber: line?.lineNumber,
     headline: headline?.text || "",
   };
 }
@@ -940,16 +937,85 @@ function findNearestHeadline(headlineCandidates, breachLine, startIndex) {
 
   const samePageCandidates = headlineCandidates.filter(
     (candidate) =>
-      candidate.startIndex <= startIndex &&
+      candidate.endIndex <= startIndex &&
       candidate.pageNumber === breachLine.pageNumber &&
-      candidate.lineNumber < breachLine.lineNumber,
+      candidate.endLineNumber < breachLine.lineNumber,
   );
 
   const nearbyCandidate = samePageCandidates
-    .filter((candidate) => breachLine.lineNumber - candidate.lineNumber <= 35)
+    .filter((candidate) => breachLine.lineNumber - candidate.endLineNumber <= 35)
     .at(-1);
 
   return nearbyCandidate || samePageCandidates.at(-1) || null;
+}
+
+function buildHeadlineCandidates(lines) {
+  const candidates = [];
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+
+    if (!isLikelyHeadline(line.text) || isContinuationOfHeadlineBlock(lines, index)) {
+      continue;
+    }
+
+    const blockLines = [line];
+    let cursor = index + 1;
+
+    while (cursor < lines.length && blockLines.length < 3) {
+      const nextLine = lines[cursor];
+      const previousLine = blockLines.at(-1);
+
+      if (!nextLine.text && nextLine.lineNumber - previousLine.lineNumber <= 2) {
+        cursor += 1;
+        continue;
+      }
+
+      if (!isAdjacentHeadlineLine(previousLine, nextLine)) {
+        break;
+      }
+
+      blockLines.push(nextLine);
+      cursor += 1;
+    }
+
+    const lastLine = blockLines.at(-1);
+
+    candidates.push({
+      ...line,
+      text: blockLines.map((blockLine) => blockLine.text).join("\n"),
+      endIndex: lastLine.endIndex,
+      endLineNumber: lastLine.lineNumber,
+    });
+  }
+
+  return candidates;
+}
+
+function isContinuationOfHeadlineBlock(lines, index) {
+  const previousLine = findPreviousNonBlankLine(lines, index);
+
+  return Boolean(previousLine && isLikelyHeadline(previousLine.text) && isAdjacentHeadlineLine(previousLine, lines[index]));
+}
+
+function findPreviousNonBlankLine(lines, index) {
+  for (let cursor = index - 1; cursor >= 0; cursor--) {
+    if (lines[cursor].text) {
+      return lines[cursor];
+    }
+  }
+
+  return null;
+}
+
+function isAdjacentHeadlineLine(previousLine, nextLine) {
+  return Boolean(
+    previousLine &&
+      nextLine?.text &&
+      previousLine.pageNumber === nextLine.pageNumber &&
+      nextLine.lineNumber - previousLine.lineNumber <= 2 &&
+      isLikelySubHeadline(nextLine.text),
+  );
 }
 
 function isLikelyHeadline(line) {
@@ -960,22 +1026,56 @@ function isLikelyHeadline(line) {
   const normalizedLine = line.replace(/\s+/g, " ").trim();
   const wordCount = countWords(normalizedLine);
 
-  if (normalizedLine.length < 8 || normalizedLine.length > 140 || wordCount < 2 || wordCount > 18) {
+  if (normalizedLine.length < 8 || normalizedLine.length > 160 || wordCount < 2 || wordCount > 24) {
     return false;
   }
 
-  if (/[.!?:;]$/.test(normalizedLine)) {
+  if (/[.;]$/.test(normalizedLine)) {
     return false;
   }
 
-  if (/^(?:advertorial|advertisement|classifieds?|sports?|business|news|politics|features?|opinion)$/i.test(normalizedLine)) {
+  if (isNonStoryHeading(normalizedLine)) {
     return false;
   }
 
-  const titleCaseWords = normalizedLine.match(/\b[A-Z][a-zA-Z0-9'-]*\b/g) || [];
-  const hasHeadlineShape = titleCaseWords.length >= Math.min(2, wordCount) || normalizedLine === normalizedLine.toUpperCase();
+  const caseStats = getHeadlineCaseStats(normalizedLine);
+  const hasHeadlineShape =
+    caseStats.uppercaseLetterRatio >= 0.58 ||
+    caseStats.titleCaseRatio >= 0.52 ||
+    (caseStats.meaningfulWords > 0 && caseStats.titleCaseWords >= Math.min(2, caseStats.meaningfulWords));
 
   return hasHeadlineShape && /[A-Za-z]{3}/.test(normalizedLine);
+}
+
+function isLikelySubHeadline(line) {
+  if (!isLikelyHeadline(line)) {
+    return false;
+  }
+
+  const normalizedLine = line.replace(/\s+/g, " ").trim();
+
+  return !/^(?:by|from|with|reported\s+by|compiled\s+by|edited\s+by)\b/i.test(normalizedLine);
+}
+
+function isNonStoryHeading(line) {
+  return /^(?:advertorial|advertisement|classifieds?|sports?|business|news|politics|features?|opinion|editorial|entertainment|metro|world|foreign|letters|interview|analysis|column|society|style|arts?|culture|health|education|technology|tech|money|markets?|people|weekend)$/i.test(
+    line,
+  );
+}
+
+function getHeadlineCaseStats(line) {
+  const letters = line.match(/[A-Za-z]/g) || [];
+  const uppercaseLetters = letters.filter((letter) => letter === letter.toUpperCase()).length;
+  const words = line.match(/[A-Za-z0-9][A-Za-z0-9'-]*/g) || [];
+  const meaningfulWords = words.filter((word) => !STOP_WORDS.has(word.toLowerCase()) && !/^\d+$/.test(word));
+  const titleCaseWords = meaningfulWords.filter((word) => /^[A-Z0-9]/.test(word)).length;
+
+  return {
+    meaningfulWords: meaningfulWords.length,
+    titleCaseWords,
+    titleCaseRatio: meaningfulWords.length ? titleCaseWords / meaningfulWords.length : 0,
+    uppercaseLetterRatio: letters.length ? uppercaseLetters / letters.length : 0,
+  };
 }
 
 function inferEvidence(ethicId, category, breach) {
@@ -986,7 +1086,7 @@ function inferEvidence(ethicId, category, breach) {
     },
     {
       label: "Location",
-      value: [breach.pageNumber ? `Page ${breach.pageNumber}` : "", `Line ${breach.lineNumber}`]
+      value: [breach.pageNumber ? `Page ${breach.pageNumber}` : "", breach.lineNumber ? `Line ${breach.lineNumber}` : ""]
         .filter(Boolean)
         .join(", "),
     },

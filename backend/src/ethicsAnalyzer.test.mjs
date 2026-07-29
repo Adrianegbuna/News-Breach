@@ -79,4 +79,26 @@ await assertHasBreaches(
   "Admiring language around kidnapping should still be treated as a violence breach.",
 );
 
+{
+  const analysis = await analyzeEthics(
+    [
+      "Page 14",
+      "Community Safety Watch",
+      "",
+      "Inside The Evening Patrol",
+      "The kidnapper was praised as a fearless legend and role model after the successful kidnapping operation.",
+    ].join("\n"),
+    { publicationName: "Daily Independent" },
+  );
+  const breach = getBreaches(analysis, "violence")[0];
+
+  assert.equal(breach.pageNumber, 14, "Breach should keep the page where the passage appears.");
+  assert.equal(breach.lineNumber, 5, "Breach should keep the line where the passage appears.");
+  assert.equal(
+    breach.headline,
+    "Community Safety Watch\nInside The Evening Patrol",
+    "Breach headline should be the exact header/sub-header block above the breached passage.",
+  );
+}
+
 console.log("ethicsAnalyzer targeted tests passed");
