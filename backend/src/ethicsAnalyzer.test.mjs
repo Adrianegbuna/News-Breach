@@ -103,6 +103,58 @@ await assertNoBreaches(
 
 await assertNoBreaches(
   [
+    "Page 3",
+    "Education Reform",
+    "Nigeria's education system has undoubtedly expanded in scope, but quality must become the centrepiece of policy.",
+  ].join("\n"),
+  "accuracy-and-fairness",
+  "Ordinary policy analysis using undoubtedly should not be treated as unsupported factual certainty.",
+);
+
+await assertNoBreaches(
+  [
+    "Page 14",
+    "Trade Bill Hearing",
+    "\"It is clear that the AfCFTA Domestication Bill before us is both timely and necessary,\" the minister said.",
+  ].join("\n"),
+  "accuracy-and-fairness",
+  "Quoted assessment that a bill is timely and necessary should not be treated as an accuracy breach.",
+);
+
+await assertNoBreaches(
+  [
+    "Page 20",
+    "NAPTIP Cautions Parents",
+    "Kuma urged parents to remain vigilant and avoid releasing children to individuals making unverified promises of employment.",
+    "She advised them to verify every opportunity with NAPTIP.",
+  ].join("\n"),
+  "accuracy-and-fairness",
+  "Warnings against unverified promises should not be treated as publishing unverified information.",
+);
+
+await assertNoBreaches(
+  [
+    "Page 22",
+    "Labour And Public Expectations",
+    "Measuring labour's effectiveness purely by the frequency of strikes may be misleading.",
+    "Yet it would be inaccurate to conclude that organised labour has become irrelevant.",
+  ].join("\n"),
+  "accuracy-and-fairness",
+  "Analytical uses of misleading or inaccurate should not be treated as misinformation.",
+);
+
+await assertNoBreaches(
+  [
+    "Page 30",
+    "Transfer Update",
+    "Federico Chiesa insists he is only thinking about Liverpool amid continued speculation over his future.",
+  ].join("\n"),
+  "accuracy-and-fairness",
+  "Routine sports-transfer speculation wording should not be treated as speculative reporting.",
+);
+
+await assertNoBreaches(
+  [
     "Page 1",
     "Dangote Plans Charity Donation",
     "Africa's richest man, Aliko Dangote, plans to donate one-third of his wealth to charity as part of his succession plan, his daughter, Halima Dangote, has revealed.",
@@ -132,6 +184,37 @@ await assertNoBreaches(
   ].join("\n"),
   "privacy",
   "Professional therapy education programme names should not be treated as private therapy disclosure.",
+);
+
+await assertNoBreaches(
+  [
+    "Page 22",
+    "Age And Egg Quality",
+    "These include the fertility diet, quality sleep, avoidance of smoking and stress management.",
+    "The public health column is written by a consultant obstetrician at an IVF clinic.",
+  ].join("\n"),
+  "privacy",
+  "General fertility education columns should not be treated as private medical disclosure.",
+);
+
+await assertNoBreaches(
+  [
+    "Page 28",
+    "Customs Recruitment Notice",
+    "Candidates are required to log on to the portal using their National Identification Number or registered email address.",
+  ].join("\n"),
+  "privacy",
+  "Generic instructions to use one's own NIN or email should not be treated as publishing a private identifier.",
+);
+
+await assertNoBreaches(
+  [
+    "Page 23",
+    "Debt Burden",
+    "Debt servicing now consumes an alarming share of government revenue, which has continued to cripple economic growth.",
+  ].join("\n"),
+  "discrimination",
+  "Non-personal disability metaphors about economics should not be treated as discrimination.",
 );
 
 await assertNoBreaches(
@@ -176,6 +259,17 @@ await assertHasBreaches(
   );
 }
 
+await assertHasBreaches(
+  [
+    "Page 9",
+    "Capital Punishment Interview",
+    "They are animals.",
+    "They should be exterminated rapidly.",
+  ].join("\n"),
+  "decency",
+  "Dehumanising abusive language should still be treated as a decency breach.",
+);
+
 {
   const analysis = await analyzeEthics(
     [
@@ -191,6 +285,26 @@ await assertHasBreaches(
     getBreaches(analysis, "decency").length,
     1,
     "Repeated nearby descriptions of the same graphic injury should count as one decency issue.",
+  );
+}
+
+{
+  const analysis = await analyzeEthics(
+    [
+      "Page 18",
+      "Music Lyrics Review",
+      "The first line uses a vulgar shit reference.",
+      "Another nearby line repeats the same shit reference.",
+      "A separate line uses fuck as a vulgar command.",
+      "The next line repeats the same fuck command.",
+    ].join("\n"),
+    { publicationName: "Saturday Independent" },
+  );
+
+  assert.equal(
+    getBreaches(analysis, "decency").length,
+    2,
+    "Repeated nearby vulgar terms should be counted once per distinct offensive term.",
   );
 }
 

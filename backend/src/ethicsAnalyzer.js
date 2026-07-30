@@ -157,6 +157,18 @@ const ACCURACY_SAFE_REPORTED_CLAIM_PATTERNS = [
   /\b(?:claims?|video|reports?|information)\b[\s\S]{0,360}\b(?:unverified|misleading|false|fabricated|baseless)\b[\s\S]{0,360}\b(?:dismissed|debunked|clarified|warned|urged|stop\s+sharing|verify|official\s+channels?)\b/i,
   /\b(?:labelled|labeled|described|dismissed)\b[\s\S]{0,160}\b(?:claims?|allegations?|reports?)\b[\s\S]{0,160}\b(?:baseless|fabricated|false|misleading|unverified)\b/i,
   /\b(?:baseless|fabricated|false|misleading|unverified)\b[\s\S]{0,160}\b(?:claims?|allegations?|reports?)\b[\s\S]{0,160}\b(?:clarified|never\s+issued|not\s+true|no\s+such|stop\s+sharing|verify)\b/i,
+  /\b(?:describing|described|faulted|dismissed|rejected)\b[\s\S]{0,180}\b(?:claim|claims?|reports?|allegation)\b[\s\S]{0,180}\b(?:baseless|fabricated|misleading|inaccurate|false)\b/i,
+  /\b(?:claim|claims?|reports?|allegation)\b[\s\S]{0,180}\b(?:baseless|fabricated|misleading|inaccurate|false)\b[\s\S]{0,180}\b(?:describing|described|faulted|dismissed|rejected|arguing|said)\b/i,
+  /\bavoid\s+releasing\s+children\b[\s\S]{0,180}\bunverified\s+promises\b/i,
+  /\b(?:cautioned|warned|urged|advised)\b[\s\S]{0,220}\b(?:unverified|fake)\b[\s\S]{0,160}\b(?:promises|jobs?|scholarships?|opportunit(?:y|ies)|schemes?)\b/i,
+  /\b(?:unverified|fake)\b[\s\S]{0,160}\b(?:promises|jobs?|scholarships?|opportunit(?:y|ies)|schemes?)\b[\s\S]{0,220}\b(?:verify|vigilant|cautioned|warned|urged|advised)\b/i,
+  /\bunder\s+(?:misleading|false)\s+labels?\b/i,
+  /\b(?:misleading|inaccurate)\b[\s\S]{0,80}\b(?:impression|conclude|conclusion)\b/i,
+  /\b(?:measuring|viewed|taken)\b[\s\S]{0,120}\b(?:misleading|inaccurate)\b/i,
+  /\bmisleading\s+social\s+media\s+posts?\b/i,
+  /\bcontinued\s+speculation\s+over\s+(?:his|her|their)\s+future\b/i,
+  /\breports?\b[\s\S]{0,220}\bfabricated\b[\s\S]{0,120}\b(?:said|stated|told|according)\b/i,
+  /\bfabricated\b[\s\S]{0,80}\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}\s+said\b/i,
   /\bunverified\s+claims?\b[\s\S]{0,160}\b(?:shared|posted|circulated|made|alleged|claimed)\b/i,
   /\bfacts?\W+(?:not\W+)?speculation\W+(?:guide|inform|drive|support)\b/i,
   /\b(?:adding\s+to\s+the\s+speculation|claims\s+remain\s+unverified|unverified\s+routine\s+diplomatic\s+letter|unverified\s+foreign\s+paper)\b/i,
@@ -172,6 +184,11 @@ const ACCURACY_SAFE_CERTAINTY_PATTERNS = [
   /\bobviously\s+we\s+still\b/i,
   /\bobviously\s+a\s+great\s+source\s+of\s+pride\b/i,
   /\bundoubtedly\s+important\s+objectives?\b/i,
+  /\bundoubtedly\s+(?:expanded\s+in\s+scope|have\s+a\s+place)\b/i,
+  /\bit\s+is\s+clear\s+that\b[\s\S]{0,120}\b(?:bill|agreement|treaty)\b[\s\S]{0,120}\b(?:timely|necessary|important)\b/i,
+  /\bcertainly\s+not\b/i,
+  /\bcurrent\s+state\s+of\s+play\s+certainly\b/i,
+  /\bcertainly\s+calls\s+for\s+a\s+new\s+way\b/i,
   /\b(?:certainly|obviously|clearly)\b.{0,120}\b(?:opinion|forecast|projection|may|might|could|should)\b/i,
   /\bundoubtedly\s+historic\b/i,
   /\bwill\s+certainly\s+not\s+be\s+matched\b/i,
@@ -287,6 +304,12 @@ const DIRECT_DISCRIMINATION_PATTERNS = [
   /\b(?:because|since)\s+(?:he|she|they|the\s+person|the\s+people)\s+(?:is|are|was|were)\s+(?:a\s+)?(?:woman|man|muslim|christian|disabled|handicapped|mentally\s+ill|igbo|yoruba|hausa|fulani)\b/i,
   /\b(?:all|every|these|those)\s+(?:igbo|ibo|yoruba|hausa|fulani|muslims|christians|women|men|disabled|handicapped|northerners|southerners|indigenes|settlers|non-indigenes)\s+(?:are|were|remain|look|sound|behave)\s+\w+/i,
   /\b(?:no|not\s+any)\s+(?:igbo|ibo|yoruba|hausa|fulani|muslim|christian|woman|disabled|handicapped|northerner|southerner|settler|non-indigene)\s+(?:should|can)\s+(?:lead|own|enter|live|work|marry|vote|contest)\b/i,
+];
+
+const NON_PERSONAL_DISABILITY_METAPHOR_PATTERNS = [
+  /\b(?:cripple|crippled|cripples|crippling)\b.{0,100}\b(?:econom(?:y|ic)|growth|commerce|mobility|traffic|road|infrastructure|revenue|business|operations?|supply|service|market)\b/i,
+  /\b(?:econom(?:y|ic)|growth|commerce|mobility|traffic|road|infrastructure|revenue|business|operations?|supply|service|market)\b.{0,100}\b(?:cripple|crippled|cripples|crippling)\b/i,
+  /\bweak\s+points?\b.{0,120}\b(?:road|infrastructure|bridge|drainage|transport|traffic|gridlock|maintenance)\b/i,
 ];
 
 const VIOLENT_OR_CRIMINAL_ACT_PATTERNS = [
@@ -510,6 +533,14 @@ const PRIVACY_SAFE_PUBLIC_HEALTH_CONTEXT_PATTERNS = [
 ];
 const PRIVACY_SAFE_PROFESSIONAL_EDUCATION_CONTEXT_PATTERNS = [
   /\b(?:Occupational\s+Therapy|Audiology|Speech\s+and\s+Language\s+Therapy|Therapy\s+Education|National\s+Committee|Minister\s+of\s+Education|education(?:al)?\s+reforms?|implementation\s+plan|committee(?:'s)?\s+achievements)\b/i,
+];
+const PRIVACY_SAFE_PUBLIC_MEDICAL_EDUCATION_CONTEXT_PATTERNS = [
+  /\b(?:ABC\s+of\s+Fertility|Age\s+And\s+Egg\s+Quality|Improving\s+Egg\s+Quality|Fertility\s+Diet|Hormonal\s+Disorders|Advanced\s+Fertility\s+Treatment|IVF\s+Clinic|Obstetrician|Gynaecologist|Medical\s+Director|doctor|consultant|clinic|public\s+health|health\s+education|medical\s+advice)\b/i,
+];
+const PRIVACY_SAFE_ADMIN_IDENTIFIER_INSTRUCTION_PATTERNS = [
+  /\b(?:candidates?|applicants?|users?|customers?|students?)\b[\s\S]{0,320}\b(?:required|advised|directed|expected)\b[\s\S]{0,320}\b(?:log\s+on|login|portal|upload|update|register|apply)\b[\s\S]{0,320}\b(?:NIN|National\s+Identification\s+Number|registered\s+email\s+address)\b/i,
+  /\b(?:log\s+on|login|portal|upload|update|register|apply)\b[\s\S]{0,320}\b(?:using|with)\s+(?:their\s+)?(?:NIN|National\s+Identification\s+Number|registered\s+email\s+address)\b/i,
+  /\bNational\s+Identification\s+Number\s+\(NIN\)\s+or\s+registered\s+email\s+address\b[\s\S]{0,160}\bupload\b/i,
 ];
 const PRIVATE_TOPIC_HEADING_PATTERNS = [
   /\b(?:what.{0,3}s\s+wrong\s+with|is\s+it\s+really\s+wrong\s+to|why|how)\b.{0,120}\b(?:pregnan(?:t|cy)|marriage|wedding|therapy|fertility)\b/i,
@@ -1320,7 +1351,13 @@ function findKnownAccuracyBreaches(text) {
 }
 
 function findDiscriminationBreaches(text) {
-  return findSentenceBreaches(text, "discrimination", (sentence) => {
+  return findSentenceBreaches(text, "discrimination", (sentence, context) => {
+    const reviewContext = `${sentence} ${context}`;
+
+    if (hasMatch(reviewContext, NON_PERSONAL_DISABILITY_METAPHOR_PATTERNS)) {
+      return null;
+    }
+
     const directMatch = DIRECT_DISCRIMINATION_PATTERNS.find((pattern) => pattern.test(sentence));
     const protectedMatch = hasDiscriminatoryProtectedTrait(sentence);
     const pejorativeMatch = PEJORATIVE_PATTERNS.find((pattern) => pattern.test(sentence));
@@ -1329,7 +1366,7 @@ function findDiscriminationBreaches(text) {
       return null;
     }
 
-    if (!directMatch && isQuotedOrAnalyticalIdentityContext(sentence)) {
+    if (!directMatch && isQuotedOrAnalyticalIdentityContext(reviewContext)) {
       return null;
     }
 
@@ -1347,7 +1384,7 @@ function findViolenceBreaches(text) {
   for (let index = 0; index < sentences.length; index++) {
     const sentenceInfo = sentences[index];
     const sentence = sentenceInfo.text;
-    const context = getSentenceContext(sentences, index, 1);
+    const context = getSentenceContext(sentences, index, 3);
     const reason = getViolenceReason(sentence, context);
 
     if (!reason) {
@@ -1474,7 +1511,7 @@ function findPrivilegeNonDisclosureBreaches(text) {
   for (let index = 0; index < sentences.length; index++) {
     const sentenceInfo = sentences[index];
     const sentence = sentenceInfo.text;
-    const context = getSentenceContext(sentences, index, 1);
+    const context = getSentenceContext(sentences, index, 3);
     const hasConfidentialContext = hasMatch(context, CONFIDENTIAL_SOURCE_CONTEXT_PATTERNS);
     const disclosesSource =
       hasMatch(sentence, SOURCE_DISCLOSURE_PATTERNS) ||
@@ -1678,7 +1715,8 @@ function findSentenceBreaches(text, breachPrefix, evaluateSentence) {
   const breaches = [];
   const seenRanges = new Set();
 
-  for (const sentenceInfo of sentences) {
+  for (let index = 0; index < sentences.length; index++) {
+    const sentenceInfo = sentences[index];
     const sentence = sentenceInfo.text;
     const startIndex = sentenceInfo.startIndex;
 
@@ -1686,7 +1724,8 @@ function findSentenceBreaches(text, breachPrefix, evaluateSentence) {
       continue;
     }
 
-    const reason = evaluateSentence(sentence);
+    const context = getSentenceContext(sentences, index, 3);
+    const reason = evaluateSentence(sentence, context, sentenceInfo, index);
     if (!reason) {
       continue;
     }
@@ -1852,6 +1891,10 @@ function isCyberSecurityRiskContext(sentence, context) {
 function getPrivacyReason(sentence, context) {
   const reviewContext = `${sentence} ${context}`;
 
+  if (isSafeAdministrativeIdentifierInstruction(reviewContext)) {
+    return null;
+  }
+
   if (hasMatch(sentence, PRIVATE_HARD_IDENTIFIER_PATTERNS)) {
     return "Potentially publishes a personal identifier or direct contact detail such as NIN, BVN, account number, phone number, email, passport number, or exact street address.";
   }
@@ -1860,7 +1903,8 @@ function getPrivacyReason(sentence, context) {
     hasMatch(context, PRIVACY_SAFE_PUBLIC_CONTACT_PATTERNS) ||
     isSafePublicRolePrivacyContext(reviewContext) ||
     isSafePublicHealthPrivacyContext(reviewContext) ||
-    isSafeProfessionalEducationPrivacyContext(reviewContext)
+    isSafeProfessionalEducationPrivacyContext(reviewContext) ||
+    isSafePublicMedicalEducationPrivacyContext(reviewContext)
   ) {
     return null;
   }
@@ -1963,6 +2007,14 @@ function isSafeProfessionalEducationPrivacyContext(context) {
   return hasMatch(context, PRIVACY_SAFE_PROFESSIONAL_EDUCATION_CONTEXT_PATTERNS);
 }
 
+function isSafePublicMedicalEducationPrivacyContext(context) {
+  return hasMatch(context, PRIVACY_SAFE_PUBLIC_MEDICAL_EDUCATION_CONTEXT_PATTERNS);
+}
+
+function isSafeAdministrativeIdentifierInstruction(context) {
+  return hasMatch(context, PRIVACY_SAFE_ADMIN_IDENTIFIER_INSTRUCTION_PATTERNS);
+}
+
 function isPublicBiographicalFamilyProfile(sentence, context) {
   return hasMatch(normalizeForEthicsMatching(`${sentence} ${context}`), PUBLIC_BIOGRAPHICAL_FAMILY_CONTEXT_PATTERNS);
 }
@@ -2040,21 +2092,31 @@ function getDecencyReason(sentence, context) {
 }
 
 function getDecencyIssueKey(sentence, reason, context = "") {
+  const normalizedSentence = normalizeForEthicsMatching(sentence);
+
+  if (/offensive|abusive|vulgar/i.test(reason)) {
+    const offensiveTerm = normalizedSentence.match(
+      /\b(?:bastard|idiot|moron|scum|filth|slut|whore|prostitute|ashewo|olosho|runs\s+girl|bloody\s+fool|vermin|trash|garbage|degenerate|riffraff|imbecile|evil\s+beast|con[-\s]?man|con[-\s]?men|fuck|fucking|shit|bullshit|asshole|bitch|damn|hellish|animals?)\b/i,
+    );
+
+    return offensiveTerm ? `offensive-${offensiveTerm[0].toLowerCase().replace(/\s+/g, "-")}` : "";
+  }
+
   if (!/lurid|graphic|abhorrent|horrid/i.test(reason)) {
     return "";
   }
 
-  const normalizedSentence = normalizeForEthicsMatching(`${sentence} ${context}`);
+  const normalizedGraphicContext = normalizeForEthicsMatching(`${sentence} ${context}`);
 
-  if (/\b(?:severed|cut(?:ting)?\s+off)\b.{0,80}\bmanhood\b/i.test(normalizedSentence)) {
+  if (/\b(?:severed|cut(?:ting)?\s+off)\b.{0,80}\bmanhood\b/i.test(normalizedGraphicContext)) {
     return "graphic-injury-manhood";
   }
 
-  if (/\b(?:dismembered|mutilated|body\s+parts|corpse|chainsaws?)\b/i.test(normalizedSentence)) {
+  if (/\b(?:dismembered|mutilated|body\s+parts|corpse|chainsaws?)\b/i.test(normalizedGraphicContext)) {
     return "graphic-body-remains";
   }
 
-  const matchedTerm = normalizedSentence.match(
+  const matchedTerm = normalizedGraphicContext.match(
     /\b(?:blood-soaked|blood\s+soaked|mangled|charred|dismembered|severed|decapitated|beheaded|guts|intestines|brains|corpse|rotting|decomposing|mutilated|disfigured|slit\s+throat|severed\s+head|burnt\s+corpse|charred\s+remains|naked\s+corpse|body\s+parts|private\s+parts|lifeless\s+body|pool\s+of\s+blood)\b/i,
   );
 
