@@ -100,7 +100,7 @@ const ETHICS = [
   },
 ];
 
-const ANALYSIS_VERSION = "2026-07-ethics-v5";
+const ANALYSIS_VERSION = "2026-07-ethics-v6";
 
 const NIGERIAN_NEWS_OUTLET_PATTERN =
   /\b(?:punch(?:\s+newspapers?)?|vanguard|daily\s+trust|leadership|the\s+sun(?:\s+newspaper)?|guardian|thisday|premium\s+times|tribune|nigerian\s+tribune|sahara\s+reporters|channels?\s+tv|the\s+nation|daily\s+post|business\s*day|blueprint|new\s+telegraph|daily\s+nigerian|legit(?:\.ng)?|nairametrics|the\s+cable|arise\s+news|ait|nta|news\s+agency\s+of\s+nigeria|nan)\b/i;
@@ -140,8 +140,22 @@ const ACCURACY_META_CRITIQUE_PATTERNS = [
 const ACCURACY_SAFE_REPORTED_CLAIM_PATTERNS = [
   /\b(?:deceptive\s+marketing\s+and\s+misleading\s+pricing|marketing\s+and\s+misleading\s+pricing)\b/i,
   /\bmisleading\s+narratives?\b/i,
-  /\blocally\s+fabricated\s+firearms?\b/i,
+  /\blocally\s+fabricated\s+(?:single[-\s]?barrel\s+)?(?:firearms?|pistols?|guns?|weapons?)\b/i,
   /\bland\s+speculation\b/i,
+  /\bspeculation\s+to\s+harden\s+into\s+accepted\s+fact\b/i,
+  /\b(?:silence|lack\s+of\s+clarity)\b[\s\S]{0,120}\bspeculation\s+to\s+harden\s+into\s+accepted\s+fact\b/i,
+  /\b(?:mutilated|fabricated|fake|fictitious)\b[\s\S]{0,120}\b(?:document|documents|gazette|security\s+features?|directorate)\b/i,
+  /\b(?:document|documents|gazette|security\s+features?|directorate)\b[\s\S]{0,120}\b(?:mutilated|fabricated|fake|fictitious)\b/i,
+  /\b(?:inadequate|misleading)\s+labels?\b[\s\S]{0,160}\b(?:consumers?|health\s+risks?|product\s+sources?|trace|traceability|labelling|labeling)\b/i,
+  /\b(?:consumers?|product\s+labelling|product\s+labeling|manufacturers?|importers?|distributors?)\b[\s\S]{0,180}\bmisleading\s+labels?\b/i,
+  /\brumou?r\s+management(?:\s+systems?)?\b/i,
+  /\b(?:social\s+listening|risk\s+messaging|public\s+health|emergency\s+response|RCCE)\b[\s\S]{0,180}\brumou?rs?\b/i,
+  /\b(?:spokesperson|representative|lawyer|aide)\b[\s\S]{0,260}\b(?:narrative|claim|allegation|report|story)\b[\s\S]{0,180}\b(?:inaccurate|incorrect|false|misleading)\b/i,
+  /\b(?:narrative|claim|allegation|report|story)\b[\s\S]{0,180}\b(?:inaccurate|incorrect|false|misleading)\b[\s\S]{0,260}\b(?:spokesperson|representative|lawyer|aide)\b/i,
+  /\bnarrative\b[\s\S]{0,220}\b(?:inaccurate|incorrect|false|misleading)\b/i,
+  /\bafter\s+weeks\s+of\s+speculation\b[\s\S]{0,260}\b(?:joined|signed|loan|deal|transfer|club|season|striker|goalkeeper|coach|squad|jersey)\b/i,
+  /\b(?:football|sports?|striker|goalkeeper|coach|club|loan|season|squad|jersey|transfer|Ajax|Chippa|Wolves|Super\s+Eagles)\b[\s\S]{0,260}\bprompting\s+speculation\b/i,
+  /\bprompting\s+speculation\b[\s\S]{0,260}\b(?:football|sports?|striker|goalkeeper|coach|club|loan|season|squad|jersey|transfer|Ajax|Chippa|Wolves|Super\s+Eagles)\b/i,
   /\bbaseless\s+and\s+without\s+iota\s+of\s+merit\b/i,
   /\bunverified\s+transfer\s+stories\b/i,
   /\bmisleading\s+our\s+supporters\b/i,
@@ -527,6 +541,13 @@ const PRIVACY_SAFE_PUBLIC_ROLE_CONTEXT_PATTERNS = [
   /\b(?:Aliko\s+Dangote|Dangote\s+Foundation|trustee|charity|succession\s+plan|Bloomberg)\b/i,
   /\b(?:foundation|charity|philanthrop(?:y|ic)|trustee|donat(?:e|ion)|wealth|succession\s+plan)\b[\s\S]{0,260}\b(?:daughter|son|family)\b/i,
   /\b(?:daughter|son|family)\b[\s\S]{0,260}\b(?:foundation|charity|philanthrop(?:y|ic)|trustee|donat(?:e|ion)|wealth|succession\s+plan)\b/i,
+  /\b(?:memorial\s+foundation|foundation|scholarships?|charity|philanthrop(?:y|ic))\b[\s\S]{0,260}\b(?:late\s+husband|late\s+wife|in\s+memory\s+of)\b/i,
+  /\b(?:late\s+husband|late\s+wife|in\s+memory\s+of)\b[\s\S]{0,260}\b(?:memorial\s+foundation|foundation|scholarships?|charity|philanthrop(?:y|ic))\b/i,
+];
+const PRIVACY_SAFE_GENERIC_FAMILY_CONTEXT_PATTERNS = [
+  /\b(?:every|many|millions\s+of|ordinary)\s+Nigerian\s+(?:parent|parents|students|families|children)\b/i,
+  /\b(?:public|private|foreign|higher)\s+education\b[\s\S]{0,260}\b(?:parents?|children|students|universities)\b/i,
+  /\b(?:parents?|children|students|universities)\b[\s\S]{0,260}\b(?:public|private|foreign|higher)\s+education\b/i,
 ];
 const PRIVACY_SAFE_PUBLIC_HEALTH_CONTEXT_PATTERNS = [
   /\b(?:public\s+health|humanitarian|IDPs?|Internally\s+Displaced\s+Persons?|displaced\s+persons?|anti[-\s]snake\s+venom|snakebites?|outreach|free\s+treatment|medical\s+intervention)\b/i,
@@ -538,6 +559,8 @@ const PRIVACY_SAFE_PUBLIC_MEDICAL_EDUCATION_CONTEXT_PATTERNS = [
   /\b(?:ABC\s+of\s+Fertility|Age\s+And\s+Egg\s+Quality|Improving\s+Egg\s+Quality|Fertility\s+Diet|Hormonal\s+Disorders|Advanced\s+Fertility\s+Treatment|IVF\s+Clinic|Obstetrician|Gynaecologist|Medical\s+Director|doctor|consultant|clinic|public\s+health|health\s+education|medical\s+advice)\b/i,
 ];
 const PRIVACY_SAFE_ADMIN_IDENTIFIER_INSTRUCTION_PATTERNS = [
+  /\b(?:INEC|Independent\s+National\s+Electoral\s+Commission|election|poll|voter|governorship)\b[\s\S]{0,260}\b(?:Permanent\s+Voter\s+Card|PVC)\b[\s\S]{0,180}\b(?:collection|collect|extension|deadline|registration|exercise)\b/i,
+  /\b(?:Permanent\s+Voter\s+Card|PVC)\b[\s\S]{0,180}\b(?:collection|collect|extension|deadline|registration|exercise)\b[\s\S]{0,260}\b(?:INEC|Independent\s+National\s+Electoral\s+Commission|election|poll|voter|governorship)\b/i,
   /\b(?:candidates?|applicants?|users?|customers?|students?)\b[\s\S]{0,320}\b(?:required|advised|directed|expected)\b[\s\S]{0,320}\b(?:log\s+on|login|portal|upload|update|register|apply)\b[\s\S]{0,320}\b(?:NIN|National\s+Identification\s+Number|registered\s+email\s+address)\b/i,
   /\b(?:log\s+on|login|portal|upload|update|register|apply)\b[\s\S]{0,320}\b(?:using|with)\s+(?:their\s+)?(?:NIN|National\s+Identification\s+Number|registered\s+email\s+address)\b/i,
   /\bNational\s+Identification\s+Number\s+\(NIN\)\s+or\s+registered\s+email\s+address\b[\s\S]{0,160}\bupload\b/i,
@@ -595,6 +618,10 @@ const OFFENSIVE_LANGUAGE_PATTERNS = [
   /\b(?:fuck|fucking|shit|bullshit|asshole|bitch|damn|hellish)\b/i,
 ];
 const DECENCY_SAFE_CONTEXT_PATTERNS = [
+  /\b(?:mutilated|fabricated)\b[\s\S]{0,80}\b(?:document|documents|gazette|security\s+features?)\b/i,
+  /\b(?:document|documents|gazette|security\s+features?)\b[\s\S]{0,80}\b(?:mutilated|fabricated)\b/i,
+  /\b(?:no\s+longer|reduc(?:ed|tion)|down\s+by\s+half|progress)\b[\s\S]{0,120}\b(?:beheaded|dismembered)\b/i,
+  /\b(?:beheaded|dismembered)\b[\s\S]{0,120}\b(?:no\s+longer|reduc(?:ed|tion)|down\s+by\s+half|progress)\b/i,
   /\b(?:trash|garbage|refuse|waste)\s+(?:bins?|bags?|collection|management|disposal|dump|transfer|facility)\b/i,
   /\b(?:human|animal|vegetable|food|refuse|waste|wastewater|noxious|sanitation|environmental|veterinary|livestock)\b.{0,120}\b(?:waste|matter|health(?:care)?|clinics?|services?|sanitation|disposal|refuse|biogas|disease|surveillance|genetic|feed)\b/i,
   /\b(?:animal|vegetable|food|refuse|waste|wastewater|noxious|sanitation|environmental|veterinary|livestock)\b.{0,120}\b(?:health(?:care)?|waste|matter|clinics?|services?|sanitation|disposal|refuse|biogas|disease|surveillance|genetic|feed)\b/i,
@@ -711,8 +738,10 @@ function enrichBreach(breach, ethic, index, documentContext) {
   const severity = breach.severity || inferSeverity(ethic.id, category, breach);
   const confidence = breach.confidence || inferConfidence(ethic.id, category, breach);
   const documentLocation = getBreachDocumentLocation(documentContext, breach.startIndex);
+  const paragraphSentenceExcerpt = buildParagraphSentenceExcerpt(documentContext, breach.startIndex);
   const enrichedBreach = {
     ...breach,
+    excerpt: paragraphSentenceExcerpt || breach.excerpt,
     pageNumber: breach.pageNumber || documentLocation.pageNumber,
     lineNumber: breach.lineNumber || documentLocation.lineNumber,
     headline: breach.headline || documentLocation.headline,
@@ -939,6 +968,7 @@ function buildDocumentContext(text) {
   }
 
   return {
+    text,
     lines,
     headlineCandidates: buildHeadlineCandidates(lines),
   };
@@ -994,6 +1024,94 @@ function findNearestHeadline(headlineCandidates, breachLine, startIndex) {
     .at(-1);
 
   return nearbyCandidate || samePageCandidates.at(-1) || null;
+}
+
+function buildParagraphSentenceExcerpt(documentContext, startIndex) {
+  const text = documentContext?.text || "";
+
+  if (!text || !Number.isFinite(startIndex)) {
+    return "";
+  }
+
+  const paragraphStart = findParagraphStart(documentContext, startIndex);
+  const paragraphEnd = findParagraphEnd(documentContext, paragraphStart, startIndex);
+  const paragraphText = text.slice(paragraphStart, paragraphEnd);
+  const fullStopIndex = paragraphText.indexOf(".");
+  const sentenceText = fullStopIndex >= 0 ? paragraphText.slice(0, fullStopIndex + 1) : paragraphText;
+
+  return sentenceText.replace(/\s+/g, " ").trim();
+}
+
+function findParagraphStart(documentContext, startIndex) {
+  const { text, headlineCandidates = [], lines = [] } = documentContext;
+  const previousBlankLineEnd = findPreviousBlankLineEnd(text, startIndex);
+  const line = findLineAtIndex(lines, startIndex);
+  const pageLineStart = findPageLineStart(lines, line, startIndex);
+  const headline = findNearestHeadline(headlineCandidates, line, startIndex);
+  const boundary = Math.max(previousBlankLineEnd, pageLineStart, headline?.endIndex || 0);
+
+  return skipWhitespace(text, boundary);
+}
+
+function findParagraphEnd(documentContext, paragraphStart, startIndex) {
+  const { text, headlineCandidates = [], lines = [] } = documentContext;
+  const nextBlankLineStart = findNextBlankLineStart(text, startIndex);
+  const nextPageLineStart = findNextPageLineStart(lines, startIndex);
+  const nextHeadlineStart = findNextHeadlineStart(headlineCandidates, startIndex);
+
+  return Math.min(
+    ...[nextBlankLineStart, nextPageLineStart, nextHeadlineStart, text.length].filter((index) => index > paragraphStart),
+  );
+}
+
+function findPreviousBlankLineEnd(text, startIndex) {
+  const beforeBreach = text.slice(0, startIndex);
+  const matches = Array.from(beforeBreach.matchAll(/(?:\r\n|\r|\n)\s*(?:\r\n|\r|\n)/g));
+  const lastMatch = matches.at(-1);
+
+  return lastMatch ? lastMatch.index + lastMatch[0].length : 0;
+}
+
+function findNextBlankLineStart(text, startIndex) {
+  const afterBreach = text.slice(startIndex);
+  const match = afterBreach.match(/(?:\r\n|\r|\n)\s*(?:\r\n|\r|\n)/);
+
+  return match?.index === undefined ? text.length : startIndex + match.index;
+}
+
+function findPageLineStart(lines, breachLine, startIndex) {
+  if (!breachLine) {
+    return 0;
+  }
+
+  const pageLine = lines
+    .filter(
+      (line) =>
+        line.startIndex < startIndex &&
+        line.pageNumber === breachLine.pageNumber &&
+        /^Page\s+\d+\b/i.test(line.text),
+    )
+    .at(-1);
+
+  return pageLine?.endIndex || 0;
+}
+
+function findNextPageLineStart(lines, startIndex) {
+  return lines.find((line) => line.startIndex > startIndex && /^Page\s+\d+\b/i.test(line.text))?.startIndex ?? Infinity;
+}
+
+function findNextHeadlineStart(headlineCandidates, startIndex) {
+  return headlineCandidates.find((headline) => headline.startIndex > startIndex)?.startIndex ?? Infinity;
+}
+
+function skipWhitespace(text, index) {
+  let cursor = index;
+
+  while (cursor < text.length && /\s/.test(text[cursor])) {
+    cursor += 1;
+  }
+
+  return cursor;
 }
 
 function buildHeadlineCandidates(lines) {
@@ -1294,7 +1412,7 @@ function findAccuracyAndFairnessBreaches(text) {
   for (let index = 0; index < sentences.length; index++) {
     const sentenceInfo = sentences[index];
     const sentence = sentenceInfo.text;
-    const context = getSentenceContext(sentences, index, 2);
+    const context = getSentenceContext(sentences, index, 3);
     const reason = getAccuracyAndFairnessReason(sentence, context);
 
     if (!reason) {
@@ -1902,6 +2020,7 @@ function getPrivacyReason(sentence, context) {
   if (
     hasMatch(context, PRIVACY_SAFE_PUBLIC_CONTACT_PATTERNS) ||
     isSafePublicRolePrivacyContext(reviewContext) ||
+    isSafeGenericFamilyPrivacyContext(reviewContext) ||
     isSafePublicHealthPrivacyContext(reviewContext) ||
     isSafeProfessionalEducationPrivacyContext(reviewContext) ||
     isSafePublicMedicalEducationPrivacyContext(reviewContext)
@@ -1997,6 +2116,10 @@ function isPseudonymousAdviceOrVoluntaryDisclosure(sentence, context) {
 
 function isSafePublicRolePrivacyContext(context) {
   return hasMatch(context, PRIVACY_SAFE_PUBLIC_ROLE_CONTEXT_PATTERNS);
+}
+
+function isSafeGenericFamilyPrivacyContext(context) {
+  return hasMatch(context, PRIVACY_SAFE_GENERIC_FAMILY_CONTEXT_PATTERNS);
 }
 
 function isSafePublicHealthPrivacyContext(context) {
