@@ -118,6 +118,7 @@ app.post("/uploads", upload.single("file"), async (req, res) => {
     const newspaperMetadata = inferNewspaperMetadata(extraction.text);
     const analysis = await analyzeEthics(extraction.supported ? extraction.text : "", {
       publicationName: req.body?.publicationName || newspaperMetadata.name || path.parse(req.file.originalname).name,
+      documentLayout: extraction.documentLayout,
     });
     const ethicsReview = {
       status: extraction.supported ? "completed" : "extraction_failed",

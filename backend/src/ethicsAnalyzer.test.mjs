@@ -362,10 +362,11 @@ await assertHasBreaches(
   assert.equal(breach.pageNumber, 14, "Breach should keep the page where the passage appears.");
   assert.equal(breach.lineNumber, 5, "Breach should keep the line where the passage appears.");
   assert.equal(
-    breach.headline,
+    breach.topic,
     "Community Safety Watch\nInside The Evening Patrol",
-    "Breach headline should be the exact header/sub-header block above the breached passage.",
+    "Breach topic should be the exact topic block above the breached passage.",
   );
+  assert.equal(breach.headline, breach.topic, "Breach headline should remain as a compatibility alias for topic.");
 }
 
 {
@@ -386,7 +387,80 @@ await assertHasBreaches(
   assert.equal(
     breach.excerpt,
     "During the evening patrol, residents said the gang leader was praised as a fearless legend and role model after the successful kidnapping operation.",
-    "Breach text should show the full first sentence of the paragraph, starting from the paragraph beginning.",
+    "Breach text should show the full sentence containing the triggered text.",
+  );
+}
+
+{
+  const analysis = await analyzeEthics(
+    [
+      "Page 14",
+      "Community Safety Watch",
+      "Residents first reported the patrol to police.",
+      "The kidnapper was praised as a fearless legend and role model after the successful kidnapping operation.",
+    ].join("\n"),
+    { publicationName: "Daily Independent" },
+  );
+  const breach = getBreaches(analysis, "violence")[0];
+
+  assert.equal(
+    breach.excerpt,
+    "The kidnapper was praised as a fearless legend and role model after the successful kidnapping operation.",
+    "Breach text should use the sentence that contains the triggered wording, not the paragraph's opening sentence.",
+  );
+}
+
+{
+  const analysis = await analyzeEthics(
+    [
+      "Page 4",
+      "Photo: Mahmud Isa",
+      "The kidnapper was praised as a fearless legend and role model after the successful kidnapping operation.",
+      "Widow",
+      "appeals to Wike over",
+      "Apo Estate house sale",
+    ].join("\n"),
+    {
+      publicationName: "Peoples Daily",
+      documentLayout: {
+        lines: [
+          { pageNumber: 4, text: "Widow", x: 36, right: 100, y: 958, fontSize: 21 },
+          { pageNumber: 4, text: "appeals to Wike over", x: 36, right: 160, y: 936, fontSize: 21 },
+          { pageNumber: 4, text: "Apo Estate house sale", x: 36, right: 170, y: 914, fontSize: 21 },
+          {
+            pageNumber: 4,
+            text: "The kidnapper was praised as a fearless legend and role model after the successful kidnapping operation.",
+            x: 38,
+            right: 168,
+            y: 817,
+            fontSize: 10,
+          },
+        ],
+        topics: [
+          {
+            pageNumber: 4,
+            text: "Widow\nappeals to Wike over\nApo Estate house sale",
+            x: 36,
+            right: 170,
+            yTop: 958,
+            yBottom: 914,
+            fontSize: 21,
+          },
+        ],
+      },
+    },
+  );
+  const breach = getBreaches(analysis, "violence")[0];
+
+  assert.equal(
+    breach.topic,
+    "Widow\nappeals to Wike over\nApo Estate house sale",
+    "Breach topic should come from the visually larger PDF topic even when raw text order places it after the body.",
+  );
+  assert.equal(
+    breach.excerpt,
+    "The kidnapper was praised as a fearless legend and role model after the successful kidnapping operation.",
+    "Breach text should not absorb a preceding photo caption when PDF layout identifies the story start.",
   );
 }
 

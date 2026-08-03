@@ -691,7 +691,7 @@ const STOP_WORDS = new Set([
 
 export async function analyzeEthics(text, options = {}) {
   const reviewText = text || "";
-  const documentContext = buildDocumentContext(reviewText);
+  const documentContext = buildDocumentContext(reviewText, options.documentLayout);
   const summary = await Promise.all(
     ETHICS.map(async ({ analyzer, ...ethic }) => {
       const result = reviewText.trim() ? await analyzer(reviewText, options) : [];
@@ -738,13 +738,15 @@ function enrichBreach(breach, ethic, index, documentContext) {
   const severity = breach.severity || inferSeverity(ethic.id, category, breach);
   const confidence = breach.confidence || inferConfidence(ethic.id, category, breach);
   const documentLocation = getBreachDocumentLocation(documentContext, breach.startIndex);
-  const paragraphSentenceExcerpt = buildParagraphSentenceExcerpt(documentContext, breach.startIndex);
+  const sentenceExcerpt = buildBreachSentenceExcerpt(documentContext, breach.startIndex, breach.endIndex);
+  const topic = breach.topic || documentLocation.topic || breach.headline || "";
   const enrichedBreach = {
     ...breach,
-    excerpt: paragraphSentenceExcerpt || breach.excerpt,
+    excerpt: sentenceExcerpt || breach.excerpt,
     pageNumber: breach.pageNumber || documentLocation.pageNumber,
     lineNumber: breach.lineNumber || documentLocation.lineNumber,
-    headline: breach.headline || documentLocation.headline,
+    topic,
+    headline: breach.headline || topic,
   };
 
   return {
@@ -936,9 +938,10 @@ function inferConfidence(ethicId, category, breach) {
   return baseConfidenceByCategory[category] || 0.72;
 }
 
-function buildDocumentContext(text) {
+function buildDocumentContext(text, documentLayout = {}) {
   const lines = [];
   const lineMatches = Array.from(text.matchAll(/[^\r\n]*(?:\r\n|\r|\n|$)/g)).filter((match) => match[0]);
+  const layoutMatcher = createLayoutLineMatcher(documentLayout.lines);
   let pageNumber = null;
   let cursor = 0;
 
@@ -954,12 +957,17 @@ function buildDocumentContext(text) {
       pageNumber = Number.parseInt(pageMatch[1], 10);
     }
 
+    const layoutLine = findMatchingLayoutLine(layoutMatcher, pageNumber, trimmed);
     const lineInfo = {
       text: trimmed,
       startIndex,
       endIndex,
       lineNumber: index + 1,
       pageNumber,
+      x: layoutLine?.x,
+      right: layoutLine?.right,
+      y: layoutLine?.y,
+      fontSize: layoutLine?.fontSize,
     };
 
     lines.push(lineInfo);
@@ -970,6 +978,7 @@ function buildDocumentContext(text) {
   return {
     text,
     lines,
+    layoutTopics: normalizeLayoutTopics(documentLayout.topics),
     headlineCandidates: buildHeadlineCandidates(lines),
   };
 }
@@ -980,12 +989,13 @@ function getBreachDocumentLocation(documentContext, startIndex) {
   }
 
   const line = findLineAtIndex(documentContext.lines, startIndex);
-  const headline = findNearestHeadline(documentContext.headlineCandidates, line, startIndex);
+  const topic = findNearestTopic(documentContext, line, startIndex);
 
   return {
     pageNumber: line?.pageNumber,
     lineNumber: line?.lineNumber,
-    headline: headline?.text || "",
+    topic: topic?.text || "",
+    headline: topic?.text || "",
   };
 }
 
@@ -1026,29 +1036,79 @@ function findNearestHeadline(headlineCandidates, breachLine, startIndex) {
   return nearbyCandidate || samePageCandidates.at(-1) || null;
 }
 
-function buildParagraphSentenceExcerpt(documentContext, startIndex) {
+function findNearestTopic(documentContext, breachLine, startIndex) {
+  return (
+    findNearestLayoutTopic(documentContext.layoutTopics, breachLine) ||
+    findNearestHeadline(documentContext.headlineCandidates, breachLine, startIndex)
+  );
+}
+
+function findNearestLayoutTopic(layoutTopics = [], breachLine) {
+  if (!breachLine || !Number.isFinite(breachLine.y)) {
+    return null;
+  }
+
+  const samePageTopics = layoutTopics.filter(
+    (topic) =>
+      topic.pageNumber === breachLine.pageNumber &&
+      Number.isFinite(topic.yTop) &&
+      Number.isFinite(topic.yBottom) &&
+      topic.yTop >= breachLine.y - 2 &&
+      (topic.yBottom >= breachLine.y - 2 || breachLine.y >= topic.yBottom - 2) &&
+      isHorizontallyRelated(topic, breachLine),
+  );
+
+  return samePageTopics
+    .sort((left, right) => {
+      const leftDistance = Math.max(0, left.yBottom - breachLine.y);
+      const rightDistance = Math.max(0, right.yBottom - breachLine.y);
+
+      if (leftDistance !== rightDistance) {
+        return leftDistance - rightDistance;
+      }
+
+      return (right.fontSize || 0) - (left.fontSize || 0);
+    })
+    .at(0) || null;
+}
+
+function isHorizontallyRelated(topic, line) {
+  if (![topic.x, topic.right, line.x, line.right].every(Number.isFinite)) {
+    return true;
+  }
+
+  const overlap = Math.min(topic.right, line.right) - Math.max(topic.x, line.x);
+  const topicCenter = (topic.x + topic.right) / 2;
+  const lineCenter = (line.x + line.right) / 2;
+
+  return overlap >= -18 || (lineCenter >= topic.x - 40 && lineCenter <= topic.right + 40) || Math.abs(topicCenter - lineCenter) <= 80;
+}
+
+function buildBreachSentenceExcerpt(documentContext, startIndex, endIndex = startIndex) {
   const text = documentContext?.text || "";
 
   if (!text || !Number.isFinite(startIndex)) {
     return "";
   }
 
-  const paragraphStart = findParagraphStart(documentContext, startIndex);
+  const breachLine = findLineAtIndex(documentContext.lines, startIndex);
+  const topic = findNearestTopic(documentContext, breachLine, startIndex);
+  const paragraphStart = findParagraphStart(documentContext, startIndex, breachLine, topic);
   const paragraphEnd = findParagraphEnd(documentContext, paragraphStart, startIndex);
-  const paragraphText = text.slice(paragraphStart, paragraphEnd);
-  const fullStopIndex = paragraphText.indexOf(".");
-  const sentenceText = fullStopIndex >= 0 ? paragraphText.slice(0, fullStopIndex + 1) : paragraphText;
+  const sentenceStart = findSentenceStart(text, startIndex, paragraphStart);
+  const sentenceEnd = findSentenceEnd(text, Number.isFinite(endIndex) ? endIndex : startIndex, paragraphEnd);
+  const sentenceText = text.slice(sentenceStart, sentenceEnd);
 
   return sentenceText.replace(/\s+/g, " ").trim();
 }
 
-function findParagraphStart(documentContext, startIndex) {
+function findParagraphStart(documentContext, startIndex, breachLine = findLineAtIndex(documentContext.lines, startIndex), topic = null) {
   const { text, headlineCandidates = [], lines = [] } = documentContext;
   const previousBlankLineEnd = findPreviousBlankLineEnd(text, startIndex);
-  const line = findLineAtIndex(lines, startIndex);
-  const pageLineStart = findPageLineStart(lines, line, startIndex);
-  const headline = findNearestHeadline(headlineCandidates, line, startIndex);
-  const boundary = Math.max(previousBlankLineEnd, pageLineStart, headline?.endIndex || 0);
+  const pageLineStart = findPageLineStart(lines, breachLine, startIndex);
+  const headline = findNearestHeadline(headlineCandidates, breachLine, startIndex);
+  const visualStoryStart = findVisualStoryStart(documentContext, breachLine, topic, startIndex);
+  const boundary = Math.max(previousBlankLineEnd, pageLineStart, headline?.endIndex || 0, visualStoryStart?.startIndex || 0);
 
   return skipWhitespace(text, boundary);
 }
@@ -1062,6 +1122,161 @@ function findParagraphEnd(documentContext, paragraphStart, startIndex) {
   return Math.min(
     ...[nextBlankLineStart, nextPageLineStart, nextHeadlineStart, text.length].filter((index) => index > paragraphStart),
   );
+}
+
+function findSentenceStart(text, startIndex, paragraphStart) {
+  for (let cursor = startIndex - 1; cursor >= paragraphStart; cursor--) {
+    if (/[.!?]/.test(text[cursor])) {
+      return skipWhitespace(text, cursor + 1);
+    }
+  }
+
+  return paragraphStart;
+}
+
+function findSentenceEnd(text, endIndex, paragraphEnd) {
+  const searchStart = Math.max(0, Math.min(endIndex, paragraphEnd));
+
+  if (searchStart > 0 && /[.!?]/.test(text[searchStart - 1])) {
+    return searchStart;
+  }
+
+  for (let cursor = searchStart; cursor < paragraphEnd; cursor++) {
+    if (/[.!?]/.test(text[cursor])) {
+      return cursor + 1;
+    }
+  }
+
+  return paragraphEnd;
+}
+
+function findVisualStoryStart(documentContext, breachLine, topic, startIndex) {
+  if (!topic || !breachLine || !Number.isFinite(breachLine.y)) {
+    return null;
+  }
+
+  return documentContext.lines
+    .filter(
+      (line) =>
+        line.pageNumber === breachLine.pageNumber &&
+        Number.isFinite(line.y) &&
+        line.y < topic.yBottom - 1 &&
+        line.startIndex <= startIndex &&
+        line.fontSize < 13.5 &&
+        isHorizontallyRelated(topic, line) &&
+        !isLikelyBylineOrCaption(line.text),
+    )
+    .sort((left, right) => right.y - left.y || left.startIndex - right.startIndex)
+    .at(0);
+}
+
+function createLayoutLineMatcher(layoutLines = []) {
+  const byPage = new Map();
+
+  for (const line of layoutLines) {
+    if (!line?.text || !Number.isFinite(line.pageNumber)) {
+      continue;
+    }
+
+    const pageLines = byPage.get(line.pageNumber) || [];
+    pageLines.push({
+      ...line,
+      comparableText: normalizeLayoutComparableText(line.text),
+    });
+    byPage.set(line.pageNumber, pageLines);
+  }
+
+  for (const pageLines of byPage.values()) {
+    pageLines.sort((left, right) => right.y - left.y || left.x - right.x);
+  }
+
+  return {
+    byPage,
+    cursors: new Map(),
+  };
+}
+
+function findMatchingLayoutLine(layoutMatcher, pageNumber, text) {
+  if (!layoutMatcher || !Number.isFinite(pageNumber) || !text) {
+    return null;
+  }
+
+  const pageLines = layoutMatcher.byPage.get(pageNumber) || [];
+  const comparableText = normalizeLayoutComparableText(text);
+
+  if (comparableText.length < 4 || !pageLines.length) {
+    return null;
+  }
+
+  const cursor = layoutMatcher.cursors.get(pageNumber) || 0;
+  const matchedIndex = findLayoutLineIndex(pageLines, comparableText, cursor) ?? findLayoutLineIndex(pageLines, comparableText, 0);
+
+  if (!Number.isFinite(matchedIndex)) {
+    return null;
+  }
+
+  if (matchedIndex >= cursor) {
+    layoutMatcher.cursors.set(pageNumber, matchedIndex + 1);
+  }
+
+  return pageLines[matchedIndex];
+}
+
+function findLayoutLineIndex(pageLines, comparableText, startIndex) {
+  let bestIndex = null;
+  let bestScore = 0;
+
+  for (let index = startIndex; index < pageLines.length; index++) {
+    const candidateText = pageLines[index].comparableText;
+    const score = getLayoutTextMatchScore(comparableText, candidateText);
+
+    if (score > bestScore) {
+      bestIndex = index;
+      bestScore = score;
+    }
+
+    if (score === 1) {
+      break;
+    }
+  }
+
+  return bestScore >= 0.78 ? bestIndex : null;
+}
+
+function getLayoutTextMatchScore(leftText, rightText) {
+  if (!leftText || !rightText) {
+    return 0;
+  }
+
+  if (leftText === rightText) {
+    return 1;
+  }
+
+  if (leftText.includes(rightText) || rightText.includes(leftText)) {
+    return Math.min(leftText.length, rightText.length) / Math.max(leftText.length, rightText.length);
+  }
+
+  return 0;
+}
+
+function normalizeLayoutTopics(topics = []) {
+  return topics
+    .filter((topic) => topic?.text && Number.isFinite(topic.pageNumber))
+    .map((topic) => ({
+      ...topic,
+      text: topic.text.trim(),
+    }));
+}
+
+function normalizeLayoutComparableText(text) {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "")
+    .trim();
+}
+
+function isLikelyBylineOrCaption(text) {
+  return /^(?:by|from|with|reported\s+by|compiled\s+by|edited\s+by)\b/i.test(text) || /\b(?:photo|pix|picture)\s*:/i.test(text) || /^L\s*[-–]/i.test(text);
 }
 
 function findPreviousBlankLineEnd(text, startIndex) {
@@ -1257,10 +1472,10 @@ function inferEvidence(ethicId, category, breach) {
     },
   ];
 
-  if (breach.headline) {
+  if (breach.topic || breach.headline) {
     evidence.push({
-      label: "Headline",
-      value: breach.headline,
+      label: "Topic",
+      value: breach.topic || breach.headline,
     });
   }
 
