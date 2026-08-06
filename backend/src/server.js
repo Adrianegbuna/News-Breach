@@ -442,7 +442,7 @@ function formatShortDate(monthValue, dayValue, yearValue) {
 
   const shortYear = yearValue.length === 2 ? year : year % 100;
 
-  return `${String(month).padStart(2, "0")}/${String(day).padStart(2, "0")}/${String(shortYear).padStart(2, "0")}`;
+  return `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${String(shortYear).padStart(2, "0")}`;
 }
 
 function normalizeMonth(monthValue) {
