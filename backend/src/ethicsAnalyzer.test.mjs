@@ -1,17 +1,23 @@
 import assert from "node:assert/strict";
-import { analyzeEthics } from "./ethicsAnalyzer.js";
+import { analyzeEthics } from "./breachDetector.js";
 
 function getBreaches(analysis, ethicId) {
-  return analysis.summary.find((item) => item.ethic.id === ethicId)?.breaches || [];
+  return (
+    analysis.summary.find((item) => item.ethic.id === ethicId)?.breaches || []
+  );
 }
 
 async function assertNoBreaches(text, ethicId, message) {
-  const analysis = await analyzeEthics(text, { publicationName: "Daily Independent" });
+  const analysis = await analyzeEthics(text, {
+    publicationName: "Daily Independent",
+  });
   assert.equal(getBreaches(analysis, ethicId).length, 0, message);
 }
 
 async function assertHasBreaches(text, ethicId, message) {
-  const analysis = await analyzeEthics(text, { publicationName: "Daily Independent" });
+  const analysis = await analyzeEthics(text, {
+    publicationName: "Daily Independent",
+  });
   assert.ok(getBreaches(analysis, ethicId).length > 0, message);
 }
 
@@ -52,7 +58,7 @@ await assertNoBreaches(
   [
     "Page 31",
     "Preseason Squad Update",
-    "\"Obviously we still do not have any players here who were at the World Cup,\" the coach said.",
+    '"Obviously we still do not have any players here who were at the World Cup," the coach said.',
     "United icons will certainly feel vindicated by their remarks as the player faces another setback.",
   ].join("\n"),
   "accuracy-and-fairness",
@@ -75,7 +81,7 @@ await assertNoBreaches(
   [
     "Page 5",
     "Tobacco Control Advocates Meet",
-    "\"It is necessary to ensure that advocates get updates about how the industry continues to spread misleading narratives,\" Oluwafemi added.",
+    '"It is necessary to ensure that advocates get updates about how the industry continues to spread misleading narratives," Oluwafemi added.',
   ].join("\n"),
   "accuracy-and-fairness",
   "Attributed quoted criticism about misleading narratives should not be treated as the newspaper publishing misinformation.",
@@ -147,7 +153,7 @@ await assertNoBreaches(
   [
     "Page 14",
     "Trade Bill Hearing",
-    "\"It is clear that the AfCFTA Domestication Bill before us is both timely and necessary,\" the minister said.",
+    '"It is clear that the AfCFTA Domestication Bill before us is both timely and necessary," the minister said.',
   ].join("\n"),
   "accuracy-and-fairness",
   "Quoted assessment that a bill is timely and necessary should not be treated as an accuracy breach.",
@@ -359,14 +365,53 @@ await assertHasBreaches(
   );
   const breach = getBreaches(analysis, "violence")[0];
 
-  assert.equal(breach.pageNumber, 14, "Breach should keep the page where the passage appears.");
-  assert.equal(breach.lineNumber, 5, "Breach should keep the line where the passage appears.");
+  assert.equal(
+    breach.pageNumber,
+    14,
+    "Breach should keep the page where the passage appears.",
+  );
+  assert.equal(
+    breach.lineNumber,
+    5,
+    "Breach should keep the line where the passage appears.",
+  );
   assert.equal(
     breach.topic,
     "Community Safety Watch\nInside The Evening Patrol",
     "Breach topic should be the exact topic block above the breached passage.",
   );
-  assert.equal(breach.headline, breach.topic, "Breach headline should remain as a compatibility alias for topic.");
+  assert.equal(
+    breach.headline,
+    breach.topic,
+    "Breach headline should remain as a compatibility alias for topic.",
+  );
+}
+
+{
+  const analysis = await analyzeEthics(
+    [
+      "Page 1",
+      "Front Page Topic",
+      "This clean line belongs to page one.",
+      "Another clean line belongs to page one.",
+      "Page 2",
+      "Community Safety Update",
+      "The kidnapper was praised as a fearless legend and role model after the successful kidnapping operation.",
+    ].join("\n"),
+    { publicationName: "Daily Independent" },
+  );
+  const breach = getBreaches(analysis, "violence")[0];
+
+  assert.equal(
+    breach.pageNumber,
+    2,
+    "Breach should keep the page where the passage appears.",
+  );
+  assert.equal(
+    breach.lineNumber,
+    3,
+    "Breach line number should restart from the beginning of the breached page.",
+  );
 }
 
 {
@@ -424,9 +469,30 @@ await assertHasBreaches(
       publicationName: "Peoples Daily",
       documentLayout: {
         lines: [
-          { pageNumber: 4, text: "Widow", x: 36, right: 100, y: 958, fontSize: 21 },
-          { pageNumber: 4, text: "appeals to Wike over", x: 36, right: 160, y: 936, fontSize: 21 },
-          { pageNumber: 4, text: "Apo Estate house sale", x: 36, right: 170, y: 914, fontSize: 21 },
+          {
+            pageNumber: 4,
+            text: "Widow",
+            x: 36,
+            right: 100,
+            y: 958,
+            fontSize: 21,
+          },
+          {
+            pageNumber: 4,
+            text: "appeals to Wike over",
+            x: 36,
+            right: 160,
+            y: 936,
+            fontSize: 21,
+          },
+          {
+            pageNumber: 4,
+            text: "Apo Estate house sale",
+            x: 36,
+            right: 170,
+            y: 914,
+            fontSize: 21,
+          },
           {
             pageNumber: 4,
             text: "The kidnapper was praised as a fearless legend and role model after the successful kidnapping operation.",

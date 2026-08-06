@@ -7,7 +7,8 @@ import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import multer from "multer";
 import initSqlJs from "sql.js";
-import { analyzeEthics } from "./ethicsAnalyzer.js";
+import { analyzeEthics } from "./breachDetector.js";
+import { detectMediaStories } from "./mediaStoryDetection.js";
 import { extractTextFromUpload } from "./textExtractor.js";
 
 dotenv.config();
@@ -15,15 +16,37 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..");
-const uploadsDir = resolveConfiguredPath(process.env.UPLOADS_DIR, path.join(rootDir, "uploads"));
-const dataDir = resolveConfiguredPath(process.env.DATA_DIR, path.join(rootDir, "data"));
+const uploadsDir = resolveConfiguredPath(
+  process.env.UPLOADS_DIR,
+  path.join(rootDir, "uploads"),
+);
+const dataDir = resolveConfiguredPath(
+  process.env.DATA_DIR,
+  path.join(rootDir, "data"),
+);
 const dbPath = path.join(dataDir, "uploads.sqlite");
-const ocrCacheDir = resolveConfiguredPath(process.env.OCR_CACHE_DIR, path.join(dataDir, "ocr-cache"));
+const ocrCacheDir = resolveConfiguredPath(
+  process.env.OCR_CACHE_DIR,
+  path.join(dataDir, "ocr-cache"),
+);
 const ocrLangDir =
   process.env.OCR_LANG_DIR?.trim() ||
   firstExistingPath([
-    path.resolve(rootDir, "node_modules", "@tesseract.js-data", "eng", "4.0.0_best_int"),
-    path.resolve(rootDir, "..", "node_modules", "@tesseract.js-data", "eng", "4.0.0_best_int"),
+    path.resolve(
+      rootDir,
+      "node_modules",
+      "@tesseract.js-data",
+      "eng",
+      "4.0.0_best_int",
+    ),
+    path.resolve(
+      rootDir,
+      "..",
+      "node_modules",
+      "@tesseract.js-data",
+      "eng",
+      "4.0.0_best_int",
+    ),
   ]);
 
 fs.mkdirSync(uploadsDir, { recursive: true });
@@ -61,7 +84,9 @@ function ensureColumn(tableName, columnName, columnDefinition) {
   const columns = result[0]?.values.map((row) => row[1]) ?? [];
 
   if (!columns.includes(columnName)) {
-    db.run(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`);
+    db.run(
+      `ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`,
+    );
   }
 }
 
@@ -114,15 +139,32 @@ app.post("/uploads", upload.single("file"), async (req, res) => {
 
   try {
     const fileStats = fs.statSync(req.file.path);
-    const extraction = await extractTextFromUpload(req.file, { ocrCacheDir, ocrLangDir });
-    const newspaperMetadata = inferNewspaperMetadata(extraction.text);
-    const analysis = await analyzeEthics(extraction.supported ? extraction.text : "", {
-      publicationName: req.body?.publicationName || newspaperMetadata.name || path.parse(req.file.originalname).name,
-      documentLayout: extraction.documentLayout,
+    const extraction = await extractTextFromUpload(req.file, {
+      ocrCacheDir,
+      ocrLangDir,
     });
-    const ethicsReview = {
+    const newspaperMetadata = inferNewspaperMetadata(extraction.text);
+    const mode =
+      req.body?.mode === "mediaStories" ? "mediaStories" : "breachDetection";
+    const analysis =
+      mode === "mediaStories"
+        ? await detectMediaStories(
+            extraction.supported ? extraction.text : "",
+            {
+              documentLayout: extraction.documentLayout,
+            },
+          )
+        : await analyzeEthics(extraction.supported ? extraction.text : "", {
+            publicationName:
+              req.body?.publicationName ||
+              newspaperMetadata.name ||
+              path.parse(req.file.originalname).name,
+            documentLayout: extraction.documentLayout,
+          });
+    const review = {
+      mode,
       status: extraction.supported ? "completed" : "extraction_failed",
-      message: getReviewMessage(extraction, analysis.totalBreaches),
+      message: getReviewMessage(extraction, analysis, mode),
       textExtraction: {
         supported: extraction.supported,
         strategy: extraction.strategy,
@@ -137,11 +179,12 @@ app.post("/uploads", upload.single("file"), async (req, res) => {
       storedName: req.file.filename,
       mimeType: req.file.mimetype,
       size: req.file.size,
-      fileCreatedAt: fileStats.birthtime?.toISOString?.() || fileStats.ctime.toISOString(),
+      fileCreatedAt:
+        fileStats.birthtime?.toISOString?.() || fileStats.ctime.toISOString(),
       newspaperName: newspaperMetadata.name,
       newspaperDate: newspaperMetadata.date,
       uploadedAt: new Date().toISOString(),
-      ethicsReview,
+      review,
     };
 
     const insert = db.prepare(`
@@ -170,7 +213,7 @@ app.post("/uploads", upload.single("file"), async (req, res) => {
       uploadRecord.newspaperName,
       uploadRecord.newspaperDate,
       uploadRecord.uploadedAt,
-      JSON.stringify(uploadRecord.ethicsReview),
+      JSON.stringify(uploadRecord.review),
     ]);
     insert.free();
     saveDatabase();
@@ -178,7 +221,8 @@ app.post("/uploads", upload.single("file"), async (req, res) => {
     return res.status(201).json(uploadRecord);
   } catch {
     return res.status(500).json({
-      message: "The file was uploaded, but the ethics review could not be completed.",
+      message:
+        "The file was uploaded, but the ethics review could not be completed.",
     });
   }
 });
@@ -202,7 +246,9 @@ app.get("/uploads", (_req, res) => {
 
   const rows = result[0]
     ? result[0].values.map((value) =>
-        Object.fromEntries(result[0].columns.map((column, index) => [column, value[index]])),
+        Object.fromEntries(
+          result[0].columns.map((column, index) => [column, value[index]]),
+        ),
       )
     : [];
 
@@ -215,7 +261,9 @@ app.listen(port, host, () => {
 
 function resolveConfiguredPath(configuredPath, fallbackPath) {
   const targetPath = configuredPath?.trim() || fallbackPath;
-  return path.isAbsolute(targetPath) ? targetPath : path.resolve(rootDir, targetPath);
+  return path.isAbsolute(targetPath)
+    ? targetPath
+    : path.resolve(rootDir, targetPath);
 }
 
 function firstExistingPath(paths) {
@@ -232,7 +280,9 @@ function inferNewspaperMetadata(text = "") {
 }
 
 function getFirstPageText(text) {
-  const pageMatch = text.match(/(?:^|\n)Page\s+1\b([\s\S]*?)(?=\n\s*Page\s+2\b|$)/i);
+  const pageMatch = text.match(
+    /(?:^|\n)Page\s+1\b([\s\S]*?)(?=\n\s*Page\s+2\b|$)/i,
+  );
 
   if (pageMatch) {
     return pageMatch[1].trim();
@@ -251,27 +301,66 @@ function inferNewspaperName(firstPageText) {
   const knownNewspapers = [
     {
       name: "Daily Independent",
-      patterns: [/\bindependent\.ng\b/i, /\b(?:daily|sunday|saturday)\s+independent\b/i, /(?:^|\n)\s*INDEPENDENT\s*(?:\n|$)/],
+      patterns: [
+        /\bindependent\.ng\b/i,
+        /\b(?:daily|sunday|saturday)\s+independent\b/i,
+        /(?:^|\n)\s*INDEPENDENT\s*(?:\n|$)/,
+      ],
     },
-    { name: "Leadership", patterns: [/\bleadership\.ng\b/i, /\bleadership\b/i] },
-    { name: "The Sun", patterns: [/\bsunnewsonline\.com\b/i, /\bthe\s+sun\b/i] },
+    {
+      name: "Leadership",
+      patterns: [/\bleadership\.ng\b/i, /\bleadership\b/i],
+    },
+    {
+      name: "The Sun",
+      patterns: [/\bsunnewsonline\.com\b/i, /\bthe\s+sun\b/i],
+    },
     { name: "Vanguard", patterns: [/\bvanguardngr\.com\b/i, /\bvanguard\b/i] },
-    { name: "Punch", patterns: [/\bpunchng\.com\b/i, /\bthe\s+punch\b/i, /\bpunch\b/i] },
-    { name: "The Guardian", patterns: [/\bguardian\.ng\b/i, /\bthe\s+guardian\b/i] },
-    { name: "Daily Trust", patterns: [/\bdailytrust\.com\b/i, /\bdaily\s+trust\b/i] },
-    { name: "Nigerian Tribune", patterns: [/\btribuneonlineng\.com\b/i, /\bnigerian\s+tribune\b/i] },
+    {
+      name: "Punch",
+      patterns: [/\bpunchng\.com\b/i, /\bthe\s+punch\b/i, /\bpunch\b/i],
+    },
+    {
+      name: "The Guardian",
+      patterns: [/\bguardian\.ng\b/i, /\bthe\s+guardian\b/i],
+    },
+    {
+      name: "Daily Trust",
+      patterns: [/\bdailytrust\.com\b/i, /\bdaily\s+trust\b/i],
+    },
+    {
+      name: "Nigerian Tribune",
+      patterns: [/\btribuneonlineng\.com\b/i, /\bnigerian\s+tribune\b/i],
+    },
     { name: "ThisDay", patterns: [/\bthisdaylive\.com\b/i, /\bthisday\b/i] },
-    { name: "The Nation", patterns: [/\bthenationonlineng\.net\b/i, /\bthe\s+nation\b/i] },
-    { name: "New Telegraph", patterns: [/\bnewtelegraphng\.com\b/i, /\bnew\s+telegraph\b/i] },
+    {
+      name: "The Nation",
+      patterns: [/\bthenationonlineng\.net\b/i, /\bthe\s+nation\b/i],
+    },
+    {
+      name: "New Telegraph",
+      patterns: [/\bnewtelegraphng\.com\b/i, /\bnew\s+telegraph\b/i],
+    },
     { name: "Blueprint", patterns: [/\bblueprint\.ng\b/i, /\bblueprint\b/i] },
-    { name: "BusinessDay", patterns: [/\bbusinessday\.ng\b/i, /\bbusiness\s*day\b/i] },
-    { name: "Daily Post", patterns: [/\bdailypost\.ng\b/i, /\bdaily\s+post\b/i] },
-    { name: "Premium Times", patterns: [/\bpremiumtimesng\.com\b/i, /\bpremium\s+times\b/i] },
+    {
+      name: "BusinessDay",
+      patterns: [/\bbusinessday\.ng\b/i, /\bbusiness\s*day\b/i],
+    },
+    {
+      name: "Daily Post",
+      patterns: [/\bdailypost\.ng\b/i, /\bdaily\s+post\b/i],
+    },
+    {
+      name: "Premium Times",
+      patterns: [/\bpremiumtimesng\.com\b/i, /\bpremium\s+times\b/i],
+    },
     { name: "The Cable", patterns: [/\bthecable\.ng\b/i, /\bthe\s+cable\b/i] },
   ];
 
   const knownMatch = knownNewspapers.find((newspaper) =>
-    newspaper.patterns.some((pattern) => pattern.test(compactText) || pattern.test(mastheadText)),
+    newspaper.patterns.some(
+      (pattern) => pattern.test(compactText) || pattern.test(mastheadText),
+    ),
   );
 
   if (knownMatch) {
@@ -296,7 +385,11 @@ function inferMastheadLine(firstPageText) {
         }
 
         const words = line.split(/\s+/).filter(Boolean);
-        return words.length <= 5 && (line === line.toUpperCase() || words.every((word) => /^[A-Z][A-Za-z'-]*$/.test(word)));
+        return (
+          words.length <= 5 &&
+          (line === line.toUpperCase() ||
+            words.every((word) => /^[A-Z][A-Za-z'-]*$/.test(word)))
+        );
       }) || ""
   );
 }
@@ -308,7 +401,11 @@ function inferNewspaperDate(firstPageText) {
   );
 
   if (monthNameDate) {
-    return formatShortDate(monthNameDate[1], monthNameDate[2], monthNameDate[3]);
+    return formatShortDate(
+      monthNameDate[1],
+      monthNameDate[2],
+      monthNameDate[3],
+    );
   }
 
   const dayMonthNameDate = compactText.match(
@@ -316,10 +413,16 @@ function inferNewspaperDate(firstPageText) {
   );
 
   if (dayMonthNameDate) {
-    return formatShortDate(dayMonthNameDate[2], dayMonthNameDate[1], dayMonthNameDate[3]);
+    return formatShortDate(
+      dayMonthNameDate[2],
+      dayMonthNameDate[1],
+      dayMonthNameDate[3],
+    );
   }
 
-  const numericDate = compactText.match(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b/);
+  const numericDate = compactText.match(
+    /\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b/,
+  );
 
   if (numericDate) {
     return formatShortDate(numericDate[1], numericDate[2], numericDate[3]);
@@ -366,7 +469,7 @@ function normalizeMonth(monthValue) {
   return monthNames[monthValue.toLowerCase()] || 0;
 }
 
-function getReviewMessage(extraction, totalBreaches) {
+function getReviewMessage(extraction, analysis, mode) {
   if (!extraction.supported) {
     return extraction.message;
   }
@@ -375,11 +478,15 @@ function getReviewMessage(extraction, totalBreaches) {
     return extraction.message;
   }
 
-  if (totalBreaches > 0) {
-    return "Review complete. Potential ethics breaches were detected.";
+  if (mode === "mediaStories") {
+    return analysis.totalStories > 0
+      ? "Review complete. Media story headings were detected."
+      : "Review complete. No media story headings were detected.";
   }
 
-  return "Review complete. No potential ethics breaches were detected.";
+  return analysis.totalBreaches > 0
+    ? "Review complete. Potential ethics breaches were detected."
+    : "Review complete. No potential ethics breaches were detected.";
 }
 
 function hydrateUploadRow(row) {
@@ -387,7 +494,7 @@ function hydrateUploadRow(row) {
 
   return {
     ...upload,
-    ethicsReview: parseAnalysisJson(analysisJson),
+    review: parseAnalysisJson(analysisJson),
   };
 }
 
