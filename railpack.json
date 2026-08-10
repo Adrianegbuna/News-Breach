@@ -1,0 +1,5 @@
+{
+  "deploy": {
+    "startCommand": "npm --workspace backend run start"
+  }
+}
