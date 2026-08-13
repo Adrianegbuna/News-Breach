@@ -6,7 +6,6 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import multer from "multer";
-import initSqlJs from "sql.js";
 import { analyzeEthics } from "./breachDetector.js";
 import { detectMediaStories } from "./mediaStoryDetection.js";
 import { extractTextFromUpload } from "./textExtractor.js";
@@ -20,14 +19,9 @@ const uploadsDir = resolveConfiguredPath(
   process.env.UPLOADS_DIR,
   path.join(rootDir, "uploads"),
 );
-const dataDir = resolveConfiguredPath(
-  process.env.DATA_DIR,
-  path.join(rootDir, "data"),
-);
-const dbPath = path.join(dataDir, "uploads.sqlite");
 const ocrCacheDir = resolveConfiguredPath(
   process.env.OCR_CACHE_DIR,
-  path.join(dataDir, "ocr-cache"),
+  path.join(rootDir, "data", "ocr-cache"),
 );
 const ocrLangDir =
   process.env.OCR_LANG_DIR?.trim() ||
@@ -50,47 +44,18 @@ const ocrLangDir =
   ]);
 
 fs.mkdirSync(uploadsDir, { recursive: true });
-fs.mkdirSync(dataDir, { recursive: true });
 fs.mkdirSync(ocrCacheDir, { recursive: true });
 
-const SQL = await initSqlJs();
-const databaseFile = fs.existsSync(dbPath) ? fs.readFileSync(dbPath) : null;
-const db = databaseFile ? new SQL.Database(databaseFile) : new SQL.Database();
-
-db.run(`
-  CREATE TABLE IF NOT EXISTS uploads (
-    id TEXT PRIMARY KEY,
-    original_name TEXT NOT NULL,
-    stored_name TEXT NOT NULL,
-    mime_type TEXT,
-    size INTEGER NOT NULL,
-    file_created_at TEXT,
-    uploaded_at TEXT NOT NULL,
-    analysis_json TEXT
-  );
-`);
-
-ensureColumn("uploads", "analysis_json", "TEXT");
-ensureColumn("uploads", "file_created_at", "TEXT");
-ensureColumn("uploads", "newspaper_name", "TEXT");
-ensureColumn("uploads", "newspaper_date", "TEXT");
-
-function saveDatabase() {
-  fs.writeFileSync(dbPath, Buffer.from(db.export()));
-}
-
-function ensureColumn(tableName, columnName, columnDefinition) {
-  const result = db.exec(`PRAGMA table_info(${tableName})`);
-  const columns = result[0]?.values.map((row) => row[1]) ?? [];
-
-  if (!columns.includes(columnName)) {
-    db.run(
-      `ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`,
-    );
-  }
-}
-
-saveDatabase();
+const MAX_UPLOAD_SIZE_BYTES = 30 * 1024 * 1024;
+const INVALID_FILE_FORMAT_MESSAGE =
+  "incorrect file format, send a .pdf or .docx file";
+const FILE_TOO_LARGE_MESSAGE =
+  "File is too large. Send a .pdf or .docx file that is 30mb or smaller.";
+const ALLOWED_UPLOAD_EXTENSIONS = new Set([".pdf", ".docx"]);
+const ALLOWED_UPLOAD_MIME_TYPES = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
@@ -105,7 +70,15 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   limits: {
-    fileSize: 25 * 1024 * 1024,
+    fileSize: MAX_UPLOAD_SIZE_BYTES,
+  },
+  fileFilter: (_req, file, cb) => {
+    if (isAllowedUpload(file)) {
+      cb(null, true);
+      return;
+    }
+
+    cb(new multer.MulterError("LIMIT_UNEXPECTED_FILE", "file"));
   },
 });
 
@@ -115,7 +88,6 @@ const host = process.env.HOST || "0.0.0.0";
 
 app.use(cors());
 app.use(express.json());
-app.use("/uploads", express.static(uploadsDir));
 
 app.get("/", (_req, res) => {
   res.json({
@@ -130,7 +102,7 @@ app.get("/health", (_req, res) => {
   });
 });
 
-app.post("/uploads", upload.single("file"), async (req, res) => {
+app.post("/uploads", handleSingleUpload, async (req, res) => {
   if (!req.file) {
     return res.status(400).json({
       message: "No file uploaded",
@@ -144,39 +116,30 @@ app.post("/uploads", upload.single("file"), async (req, res) => {
       ocrLangDir,
     });
     const newspaperMetadata = inferNewspaperMetadata(extraction.text);
-    const mode =
-      req.body?.mode === "mediaStories" ? "mediaStories" : "breachDetection";
-    const analysis =
-      mode === "mediaStories"
-        ? await detectMediaStories(
-            extraction.supported ? extraction.text : "",
-            {
-              documentLayout: extraction.documentLayout,
-            },
-          )
-        : await analyzeEthics(extraction.supported ? extraction.text : "", {
-            publicationName:
-              req.body?.publicationName ||
-              newspaperMetadata.name ||
-              path.parse(req.file.originalname).name,
-            documentLayout: extraction.documentLayout,
-          });
-    const review = {
-      mode,
-      status: extraction.supported ? "completed" : "extraction_failed",
-      message: getReviewMessage(extraction, analysis, mode),
-      textExtraction: {
-        supported: extraction.supported,
-        strategy: extraction.strategy,
-        message: extraction.message,
-      },
-      ...analysis,
+    const reviewText = extraction.supported ? extraction.text : "";
+    const [breachAnalysis, mediaStoriesAnalysis] = await Promise.all([
+      analyzeEthics(reviewText, {
+        publicationName:
+          req.body?.publicationName ||
+          newspaperMetadata.name ||
+          path.parse(req.file.originalname).name,
+        documentLayout: extraction.documentLayout,
+      }),
+      detectMediaStories(reviewText, {
+        documentLayout: extraction.documentLayout,
+      }),
+    ]);
+    const reviews = {
+      breachDetection: buildReview(extraction, breachAnalysis, "breachDetection"),
+      mediaStories: buildReview(extraction, mediaStoriesAnalysis, "mediaStories"),
     };
+    const requestedMode =
+      req.body?.mode === "mediaStories" ? "mediaStories" : "breachDetection";
+    const review = reviews[requestedMode];
 
     const uploadRecord = {
       id: randomUUID(),
       originalName: req.file.originalname,
-      storedName: req.file.filename,
       mimeType: req.file.mimetype,
       size: req.file.size,
       fileCreatedAt:
@@ -185,38 +148,8 @@ app.post("/uploads", upload.single("file"), async (req, res) => {
       newspaperDate: newspaperMetadata.date,
       uploadedAt: new Date().toISOString(),
       review,
+      reviews,
     };
-
-    const insert = db.prepare(`
-      INSERT INTO uploads (
-        id,
-        original_name,
-        stored_name,
-        mime_type,
-        size,
-        file_created_at,
-        newspaper_name,
-        newspaper_date,
-        uploaded_at,
-        analysis_json
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    insert.run([
-      uploadRecord.id,
-      uploadRecord.originalName,
-      uploadRecord.storedName,
-      uploadRecord.mimeType,
-      uploadRecord.size,
-      uploadRecord.fileCreatedAt,
-      uploadRecord.newspaperName,
-      uploadRecord.newspaperDate,
-      uploadRecord.uploadedAt,
-      JSON.stringify(uploadRecord.review),
-    ]);
-    insert.free();
-    saveDatabase();
 
     return res.status(201).json(uploadRecord);
   } catch {
@@ -224,40 +157,77 @@ app.post("/uploads", upload.single("file"), async (req, res) => {
       message:
         "The file was uploaded, but the ethics review could not be completed.",
     });
+  } finally {
+    deleteUploadedFile(req.file);
   }
 });
 
 app.get("/uploads", (_req, res) => {
-  const result = db.exec(`
-    SELECT
-      id,
-      original_name AS originalName,
-      stored_name AS storedName,
-      mime_type AS mimeType,
-      size,
-      file_created_at AS fileCreatedAt,
-      newspaper_name AS newspaperName,
-      newspaper_date AS newspaperDate,
-      uploaded_at AS uploadedAt,
-      analysis_json AS analysisJson
-    FROM uploads
-    ORDER BY uploaded_at DESC
-  `);
-
-  const rows = result[0]
-    ? result[0].values.map((value) =>
-        Object.fromEntries(
-          result[0].columns.map((column, index) => [column, value[index]]),
-        ),
-      )
-    : [];
-
-  res.json(rows.map(hydrateUploadRow));
+  res.json([]);
 });
 
 app.listen(port, host, () => {
   console.log(`Backend server listening on http://${host}:${port}`);
 });
+
+function handleSingleUpload(req, res, next) {
+  upload.single("file")(req, res, (error) => {
+    if (!error) {
+      next();
+      return;
+    }
+
+    if (error instanceof multer.MulterError) {
+      const message =
+        error.code === "LIMIT_FILE_SIZE"
+          ? FILE_TOO_LARGE_MESSAGE
+          : INVALID_FILE_FORMAT_MESSAGE;
+
+      deleteUploadedFile(req.file);
+      res.status(400).json({ message });
+      return;
+    }
+
+    deleteUploadedFile(req.file);
+    res.status(400).json({
+      message: error.message || INVALID_FILE_FORMAT_MESSAGE,
+    });
+  });
+}
+
+function isAllowedUpload(file) {
+  const extension = path.extname(file.originalname || "").toLowerCase();
+  const mimeType = (file.mimetype || "").toLowerCase();
+
+  return (
+    ALLOWED_UPLOAD_EXTENSIONS.has(extension) &&
+    (!mimeType ||
+      mimeType === "application/octet-stream" ||
+      ALLOWED_UPLOAD_MIME_TYPES.has(mimeType))
+  );
+}
+
+function deleteUploadedFile(file) {
+  if (!file?.path) {
+    return;
+  }
+
+  fs.rm(file.path, { force: true }, () => {});
+}
+
+function buildReview(extraction, analysis, mode) {
+  return {
+    mode,
+    status: extraction.supported ? "completed" : "extraction_failed",
+    message: getReviewMessage(extraction, analysis, mode),
+    textExtraction: {
+      supported: extraction.supported,
+      strategy: extraction.strategy,
+      message: extraction.message,
+    },
+    ...analysis,
+  };
+}
 
 function resolveConfiguredPath(configuredPath, fallbackPath) {
   const targetPath = configuredPath?.trim() || fallbackPath;
@@ -487,25 +457,4 @@ function getReviewMessage(extraction, analysis, mode) {
   return analysis.totalBreaches > 0
     ? "Review complete. Potential ethics breaches were detected."
     : "Review complete. No potential ethics breaches were detected.";
-}
-
-function hydrateUploadRow(row) {
-  const { analysisJson, ...upload } = row;
-
-  return {
-    ...upload,
-    review: parseAnalysisJson(analysisJson),
-  };
-}
-
-function parseAnalysisJson(analysisJson) {
-  if (!analysisJson) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(analysisJson);
-  } catch {
-    return null;
-  }
 }

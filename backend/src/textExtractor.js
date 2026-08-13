@@ -67,7 +67,7 @@ export async function extractTextFromUpload(file, options = {}) {
     text: "",
     strategy: "unsupported",
     message:
-      "This file was uploaded and stored, but automatic extraction currently supports TXT, CSV, JSON, Markdown, XML, HTML, DOCX, PDF, and common image files.",
+      "This file could not be checked. Send a .pdf or .docx file.",
   };
 }
 
