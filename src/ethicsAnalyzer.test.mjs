@@ -561,6 +561,46 @@ await assertNoBreaches(
   "High-level security-progress wording should not be treated as lurid detail when it says the practice is no longer occurring.",
 );
 
+await assertNoBreaches(
+  [
+    "Page 4",
+    "Public Advisory",
+    "We encourage everyone to avoid speculation and to rely on verified information rather than rumours or online commentary.",
+  ].join("\n"),
+  "accuracy-and-fairness",
+  "Warnings against speculation should not be treated as speculative reporting.",
+);
+
+await assertNoBreaches(
+  [
+    "Page 12",
+    "Identity Policy",
+    "The improvement reflects continued normalisation of the subscriber base towards pre-NIN-SIM linkage levels.",
+  ].join("\n"),
+  "privacy",
+  "Generic NIN-SIM policy reporting should not be treated as publishing a private identifier.",
+);
+
+await assertNoBreaches(
+  [
+    "Page 18",
+    "Classical Political Thought",
+    "The writer recalled the quip that all men are by nature equal, made all of the same earth by one Workman.",
+  ].join("\n"),
+  "discrimination",
+  "General equality quotations should not be treated as pejorative discrimination.",
+);
+
+await assertNoBreaches(
+  [
+    "Page 8",
+    "Early Years Policy",
+    "Abdulateef Shit- tu said investment in the early years should be viewed as an investment in Nigeria's future.",
+  ].join("\n"),
+  "decency",
+  "A hyphenated personal name should not be treated as vulgar language.",
+);
+
 {
   const analysis = await analyzeEthics(
     [
@@ -597,6 +637,67 @@ await assertNoBreaches(
     2,
     "Repeated nearby vulgar terms should be counted once per distinct offensive term.",
   );
+}
+
+{
+  const mockFetch = async (_url, options) => {
+    const requestBody = JSON.parse(options.body);
+    const reviewPayload = JSON.parse(requestBody.input[1].content[0].text);
+
+    assert.equal(requestBody.model, "test-review-model");
+    assert.equal(
+      requestBody.text.format.type,
+      "json_schema",
+      "LLM reviewer should request structured JSON output.",
+    );
+    assert.match(
+      reviewPayload.candidates[0].surroundingContext,
+      /Police later said two suspects were arrested/,
+      "LLM reviewer should receive bounded surrounding context around the flagged passage.",
+    );
+
+    return {
+      ok: true,
+      json: async () => ({
+        output_text: JSON.stringify({
+          decisions: [
+            {
+              breachId: "violence-1",
+              verdict: "actual_breach",
+              confidence: 0.93,
+              severity: "high",
+              reasoning: "The excerpt praises a kidnapper as a role model.",
+              recommendation: "Remove admiring framing and report the facts neutrally.",
+            },
+          ],
+        }),
+      }),
+    };
+  };
+  const analysis = await analyzeEthics(
+    [
+      "Page 9",
+      "Crime Boss Becomes Folk Hero",
+      "The kidnapper was praised as a fearless legend and role model after the successful kidnapping operation.",
+      "Police later said two suspects were arrested and the victims were receiving support.",
+    ].join("\n"),
+    {
+      publicationName: "Daily Independent",
+      llmReview: {
+        enabled: true,
+        apiKey: "test-key",
+        model: "test-review-model",
+        fetch: mockFetch,
+      },
+    },
+  );
+  const breach = getBreaches(analysis, "violence")[0];
+
+  assert.equal(analysis.llmReview.status, "completed");
+  assert.equal(breach.reviewStatus, "confirmed_by_llm");
+  assert.equal(breach.llmReview.verdict, "actual_breach");
+  assert.ok(breach.severityReason, "Breach should include category-specific severity reasoning.");
+  assert.ok(breach.confidenceProfile, "Breach should include category-specific confidence calibration.");
 }
 
 console.log("ethicsAnalyzer targeted tests passed");
