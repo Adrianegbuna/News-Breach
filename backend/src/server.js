@@ -15,6 +15,8 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..");
+const projectRootDir = path.resolve(rootDir, "..");
+const webDistDir = path.join(projectRootDir, "Web", "dist");
 const uploadsDir = resolveConfiguredPath(
   process.env.UPLOADS_DIR,
   path.join(rootDir, "uploads"),
@@ -88,6 +90,10 @@ const host = process.env.HOST || "0.0.0.0";
 
 app.use(cors());
 app.use(express.json());
+
+if (fs.existsSync(webDistDir)) {
+  app.use(express.static(webDistDir));
+}
 
 app.get("/", (_req, res) => {
   res.json({

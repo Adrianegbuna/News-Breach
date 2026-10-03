@@ -16986,7 +16986,10 @@ const modules = {
       if (configuredUrl) {
         return trimTrailingSlash(ensureUrlProtocol(configuredUrl));
       }
-      return window.location.port === "5173" ? "http://localhost:3000" : window.location.origin;
+      if (window.location.hostname === "localhost" && window.location.port !== "3000") {
+        return "http://localhost:3000";
+      }
+      return window.location.origin;
     }
     function trimTrailingSlash(value) {
       return value.replace(/\/$/, "");

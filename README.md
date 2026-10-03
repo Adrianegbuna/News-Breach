@@ -9,6 +9,7 @@ possible Nigerian Press Council ethics breaches and media-story headlines.
 - `backend/src/breachDetector.js` - ethics breach analysis
 - `backend/src/mediaStoryDetection.js` - media headline detection
 - `backend/src/textExtractor.js` - PDF/DOCX text extraction and OCR support
+- `Web/dist/` - static web app served by the backend in production
 
 ## Setup
 
@@ -27,6 +28,12 @@ npm run dev
 ```
 
 The backend runs on `http://localhost:3000` by default.
+
+When `Web/dist/` exists, the backend serves the web app at the root URL:
+
+```txt
+http://localhost:3000/
+```
 
 ## API
 
