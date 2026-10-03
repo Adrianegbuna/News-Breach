@@ -1,15 +1,18 @@
 # News Breach
 
-Expo React Native frontend and Express.js backend in separate folders.
+Express.js backend API for checking uploaded newspaper PDFs and DOCX files for
+possible Nigerian Press Council ethics breaches and media-story headlines.
 
 ## Project Structure
 
-- `frontend/` - Expo React Native app
-- `backend/` - Express.js API
+- `backend/src/server.js` - Express API entrypoint
+- `backend/src/breachDetector.js` - ethics breach analysis
+- `backend/src/mediaStoryDetection.js` - media headline detection
+- `backend/src/textExtractor.js` - PDF/DOCX text extraction and OCR support
 
 ## Setup
 
-Install dependencies from the project root:
+Install dependencies:
 
 ```sh
 npm install
@@ -17,43 +20,54 @@ npm install
 
 ## Run
 
-Start both apps:
+Start the API locally:
 
 ```sh
 npm run dev
 ```
 
-Start only the backend:
-
-```sh
-npm run dev:backend
-```
-
-Start only the frontend:
-
-```sh
-npm run dev:frontend
-```
-
 The backend runs on `http://localhost:3000` by default.
 
-## Deploy Backend On Render
+## API
 
-Create a Render **Web Service** for the backend.
+- `GET /` - service status message
+- `GET /health` - health check for hosting platforms
+- `POST /uploads` - upload a `.pdf` or `.docx` file using form field `file`
+- `GET /uploads` - currently returns an empty list
 
-Recommended settings for this workspace layout:
+## Deploy On Render
+
+This repo includes `render.yaml`, so Render can detect the web service
+settings automatically.
+
+Manual Render settings:
 
 ```txt
 Runtime: Node
 Root Directory: leave blank
 Build Command: npm install
-Start Command: npm --workspace backend run start
+Start Command: npm start
 Health Check Path: /health
 ```
 
-Render provides `PORT` automatically. The backend already binds to `0.0.0.0`, so it can receive Render traffic.
+Render provides `PORT` automatically. The server binds to `0.0.0.0`, so it can
+receive hosted traffic.
 
-For a quick test deploy, no extra storage setup is required. For a production deploy that should keep upload history and the SQLite database after restarts/redeploys, add a persistent disk and set:
+## Deploy On Railway
+
+This repo includes `railpack.json` with:
+
+```txt
+Start Command: npm start
+Health Check Path: /health
+```
+
+Railway also provides `PORT` automatically.
+
+## Environment Variables
+
+For a quick test deploy, no extra storage setup is required. For production,
+use persistent storage if your host supports it and set:
 
 ```txt
 DATA_DIR=/var/data/news-breach/data
@@ -61,7 +75,25 @@ UPLOADS_DIR=/var/data/news-breach/uploads
 OCR_CACHE_DIR=/var/data/news-breach/ocr-cache
 ```
 
-Optional plagiarism search variables:
+Optional OCR tuning:
+
+```txt
+OCR_LANGUAGE=eng
+MAX_PDF_OCR_PAGES=3
+PDF_OCR_DESIRED_WIDTH=1200
+MAX_PDF_OCR_FILE_SIZE=8388608
+```
+
+Optional OpenAI second-stage review:
+
+```txt
+OPENAI_API_KEY=your_key_here
+LLM_REVIEW_MODEL=gpt-5
+LLM_REVIEW_ENDPOINT=https://api.openai.com/v1/responses
+LLM_REVIEW_MAX_BREACHES=18
+```
+
+Optional Brave plagiarism search:
 
 ```txt
 BRAVE_SEARCH_API_KEY=your_key_here
@@ -70,25 +102,9 @@ BRAVE_SEARCH_COUNTRY=NG
 BRAVE_SEARCH_LANG=en
 ```
 
-After Render deploys, confirm these URLs work:
+After deployment, confirm these URLs work:
 
 ```txt
-https://your-render-service-name.onrender.com/
-https://your-render-service-name.onrender.com/health
+https://your-service-url/
+https://your-service-url/health
 ```
-
-## Connect Frontend Release Builds
-
-The Expo app reads `EXPO_PUBLIC_API_BASE_URL` from the build environment. Set it to the deployed Render URL without a trailing slash:
-
-```txt
-EXPO_PUBLIC_API_BASE_URL=https://your-render-service-name.onrender.com
-```
-
-For local frontend testing against Render, create `frontend/.env` from `frontend/.env.example`, then run:
-
-```sh
-npm run dev:frontend
-```
-
-For EAS release builds, add `EXPO_PUBLIC_API_BASE_URL` as a production environment variable in EAS before building. Because it is an `EXPO_PUBLIC_` value, it is bundled into the app at build time.

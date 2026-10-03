@@ -1,5 +1,6 @@
 {
   "deploy": {
-    "startCommand": "node src/server.js"
+    "startCommand": "npm start",
+    "healthCheckPath": "/health"
   }
 }

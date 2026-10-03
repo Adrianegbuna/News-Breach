@@ -3,14 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "main": "src/server.js",
+  "main": "backend/src/server.js",
   "engines": {
     "node": ">=22.3.0 <26.0.0"
   },
   "scripts": {
-    "dev": "nodemon src/server.js",
-    "start": "node src/server.js",
-    "test:ethics": "node src/ethicsAnalyzer.test.mjs"
+    "dev": "nodemon backend/src/server.js",
+    "start": "node backend/src/server.js",
+    "test:ethics": "node backend/src/ethicsAnalyzer.test.mjs"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",
